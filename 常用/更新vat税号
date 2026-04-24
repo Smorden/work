@@ -1,0 +1,6 @@
+
+-- 更新vat税号
+{
+    "task_name": "ods_lh_dtc_bs_vat_df,dwd_dim_lgct_vat_num_df,dws_lgct_vat_balance_subtract_actual_b00_df,ads_tms_vat_balance_df",
+    "taskDependType": "TASK_ONLY"
+}
