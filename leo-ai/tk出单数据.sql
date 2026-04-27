@@ -146,13 +146,14 @@ with min_list_dt as(
 )
 , ss_range_full as(
     select range_start, range_end
-        , concat(range_start
-            , ' ~ '
+        , concat('(',rn,')',range_start
+            , '~'
             , range_end
             ) as range_concat
     from(
         select range_start
             , lead(range_start, 1, 99999) over(order by range_start) as range_end
+            , row_number() over (order by range_start) as rn
         from ss_range
     ) as t
 )
@@ -279,22 +280,47 @@ group by if(list_sale_days >= 180, 180, list_sale_days)
 join (select count(1) as total_sku_cnt from temp.temp_leo_tiktok_list_sale_sku_ds) as b
 order by list_sale_days
 ;
+with ss_range as (
+    select cast(-1 as int) as range_start union all
+    select 1 as range_start union all
+    select 5 as range_start union all
+    select 10 as range_start union all
+    select 50 as range_start union all
+    select 100 as range_start
+)
+, ss_range_full as(
+    select range_start, range_end
+        , concat('(',rn,') '
+            , if(range_start=-1,0,range_start)
+            , '~'
+            , range_end
+            ) as range_concat
+    from(
+        select range_start
+            , lead(range_start, 1, 99999) over(order by range_start) as range_end
+            , row_number() over (order by range_start) as rn
+        from ss_range
+    ) as t
+)
 select
     lv1_category_en_name 一级类目
     , lv2_category_en_name 二级类目
     , lv3_category_en_name 三级类目
-    , ifnull(range_concat, '0 ~ 1') 销量区间
+    , ifnull(sr.range_concat, '0 ~ 1') 销量区间
     , count(1) as sku数
 	, sum(ifnull(clean_qty_smooth, 0)) as 总销量
-from temp.temp_leo_tiktok_list_sale_sku_ds
-where dt = curdate()
+from temp.temp_leo_tiktok_list_sale_sku_ds as bs
+left join ss_range_full as sr
+    on sr.range_start < ifnull(bs.clean_qty_smooth, 0)
+    and ifnull(bs.clean_qty_smooth, 0)  <= sr.range_end
+where bs.dt = curdate()
     and sale_status in ('停购', '在售')
 group by  lv1_category_en_name
     , lv2_category_en_name
     , lv3_category_en_name
-    ,  ifnull(range_concat, '0 ~ 1')
+    ,  ifnull(sr.range_concat, '0 ~ 1')
 order by lv1_category_en_name
     , lv2_category_en_name
     , lv3_category_en_name
-    ,  ifnull(range_concat, '0 ~ 1')
+    ,  ifnull(sr.range_concat, '0 ~ 1')
 ;
