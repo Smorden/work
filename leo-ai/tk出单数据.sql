@@ -43,6 +43,7 @@ CREATE TABLE if not exists temp.temp_leo_tiktok_list_sale_sku_ds (
   , sku_name string NULL COMMENT '中文名称'
   , lv1_category_en_name string NULL COMMENT '一级英文类目'
   , lv2_category_en_name string NULL COMMENT '二级英文类目'
+  , lv3_category_en_name string NULL COMMENT '三级英文类目'
   , min_sale_dt date NULL comment '首次刊登日期'
   , clean_qty_smooth decimalv3(26, 8) NULL COMMENT '清洗28-56-91平滑销量'
   , range_concat varchar(50) NULL COMMENT '平滑销量分组'
@@ -86,6 +87,7 @@ insert into temp.temp_leo_tiktok_list_sale_sku_ds(
 , sku_name
 , lv1_category_en_name
 , lv2_category_en_name
+, lv3_category_en_name
 , min_sale_dt
 , clean_qty_smooth
 , range_concat
@@ -129,7 +131,7 @@ with min_list_dt as(
     group by sku, site_id
 )
 , dim_sku as (
-    select sku, sku_name, lv1_category_en_name, lv2_category_en_name
+    select sku, sku_name, lv1_category_en_name, lv2_category_en_name, lv3_category_en_name
         , charge_user_name, department_3_name
     from dwd.dwd_dim_sku_ds
     where dt = date_sub(curdate(), interval 1 day)
@@ -214,7 +216,7 @@ select
     , ml.sku, ml.site_id, st.site_name, ml.min_list_dt
     , sc.sale_status, sku.charge_user_name, sc.channel_user_name, sc.department_3_name
     , replace(sku.sku_name, '\t', '') as sku_name
-    , sku.lv1_category_en_name, sku.lv2_category_en_name
+    , sku.lv1_category_en_name, sku.lv2_category_en_name, sku.lv3_category_en_name
     , ms.min_sale_dt
     , ss.clean_qty_smooth
     , sr.range_concat
@@ -245,6 +247,7 @@ select
 , sku_name as 中文名
 , lv1_category_en_name as 一级类目
 , lv2_category_en_name as 二级类目
+, lv3_category_en_name as 三级类目
 , min_list_dt as 首次刊登日期
 , min_sale_dt as 首次出单日期
 , list_sale_days as 出单天数
@@ -279,16 +282,19 @@ order by list_sale_days
 select
     lv1_category_en_name 一级类目
     , lv2_category_en_name 二级类目
+    , lv3_category_en_name 三级类目
     , ifnull(range_concat, '0 ~ 1') 销量区间
     , count(1) as sku数
-		, sum(clean_qty_smooth) as 总销量
+	, sum(ifnull(clean_qty_smooth, 0)) as 总销量
 from temp.temp_leo_tiktok_list_sale_sku_ds
 where dt = curdate()
     and sale_status in ('停购', '在售')
 group by  lv1_category_en_name
     , lv2_category_en_name
+    , lv3_category_en_name
     ,  ifnull(range_concat, '0 ~ 1')
 order by lv1_category_en_name
     , lv2_category_en_name
+    , lv3_category_en_name
     ,  ifnull(range_concat, '0 ~ 1')
 ;
