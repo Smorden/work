@@ -57,7 +57,7 @@ SELECT
 	expect_return_qty AS 计划退货数量,
 	actual_return_qty AS 实际退货出库数量,
 	supplier_manager AS 商户负责人,
-	aa.sale_department AS 末级部门
+	aa.sale_department AS 部门
 FROM
 	ads.ads_pad_purchase_excute_details_df as aa
 left join (select * from dwd.dwd_dim_dashboard_filter_selection_nf where filter_key = 25) fs on fs.selection_key = aa.pickup_method
