@@ -1,5 +1,5 @@
 SELECT
-	dt AS 需求日期,
+	po_order_date as 采购日期,
 	purchase_responser AS 采购负责人,
 	po_order_code AS 采购订单号,
 	aa.sku AS SKU编码,
@@ -61,5 +61,5 @@ SELECT
 FROM
 	ads.ads_pad_purchase_excute_details_df as aa
 left join (select * from dwd.dwd_dim_dashboard_filter_selection_nf where filter_key = 25) fs on fs.selection_key = aa.pickup_method
-    where aa.po_order_date >= '2026-01-01'
+    where aa.po_order_date >= '2025-01-01'
     ;
