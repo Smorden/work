@@ -8,7 +8,7 @@ select
     , po_line_confirm_date as 订单确认日期
     , po_line_fixed_last_sign_date as 末次签收日期
     , purchase_qty as 采购数量
-    , po_delivery_days as `交期(剔除中仓节假日)`
+    , po_delivery_days as 交期
 from dws.dws_pcct_demand_to_transit_shelf_demand_line_df
 where po_line_fixed_last_sign_date >= date_sub(curdate(), interval 1 year)
 and is_po_delivery_finished = 1
@@ -44,4 +44,13 @@ and is_po_delivery_finished = 1
         and asn.ship_no <> 'AL1230901027'
         and asn.move_estimate_oversea_in_date <> '1970-01-01'
         and asn.route_type = 1
+        and sh.actual_pickup_time <> '1970-01-01'
+        and sh.actual_sailing_time <> '1970-01-01'
+        and sh.actual_arrival_port_time <> '1970-01-01'
+        and sh.actual_arrival_warehouse_time <> '1970-01-01'
+        and sh.actual_pickup_time >= sh.order_date
+        and sh.actual_sailing_time >= sh.actual_pickup_time
+        and sh.actual_arrival_port_time >= sh.actual_sailing_time
+        and sh.actual_arrival_warehouse_time >= sh.actual_arrival_port_time
+        and asn.oversea_in_date >= sh.actual_arrival_warehouse_time
  ;
