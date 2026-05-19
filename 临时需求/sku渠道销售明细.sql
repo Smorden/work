@@ -1,5 +1,8 @@
 SELECT
     t1.dt as 日期,
+    t1.account_short_name as 账户,
+    if(t1.is_local=1,'本土','非本土') as 账户类型,
+    t1.first_inbound_date as 首次上架日期,
     t1.sku_category AS 品类,
     t1.spu AS SPU编码,
     t1.sku AS SKU编码,
@@ -57,54 +60,55 @@ SELECT
     -- t2.bad_goods_out_cost_cny_fi_30d AS 30天海外仓坏品率_分子,
     -- t2.out_cost_cny_fi_30d AS 30天海外仓坏品率_分母,
     ROUND(t2.bad_goods_rate_overseaswarehouse_30d * 100, 2) AS `30天海外仓坏品率_百分比`,
+
     -- 累计海外仓坏品率（含分子分母）
     -- t2.bad_goods_out_cost_cny_fi_td AS 累计海外仓坏品率_分子,
     -- t2.out_cost_cny_fi_td AS 累计海外仓坏品率_分母,
     ROUND(t2.bad_goods_rate_overseaswarehouse_td * 100, 2) AS 累计海外仓坏品率_百分比
 FROM (
-         SELECT dt,
+         SELECT dt,account_short_name, is_local,
                 sku,
                 site_id,
                 platform_id,
-                MAX(sku_category) AS sku_category,
-                MAX(spu) AS spu,
-                MAX(newest_spu_cn_name) AS spu_name,
-                MAX(newest_sku_name) AS sku_name,
-                MAX(key_word) AS key_word,
-                MAX(site_name) AS site_name,
-                MAX(oparation_mode) AS oparation_mode,
-                MAX(platform_name) AS platform_name,
-                MAX(is_seasonal) AS is_seasonal,
-                MAX(rank_score) AS rank_score,
+                sku_category AS sku_category,
+                spu AS spu,
+                newest_spu_cn_name AS spu_name,
+                newest_sku_name AS sku_name,
+                key_word AS key_word,
+                site_name AS site_name,
+                oparation_mode AS oparation_mode,
+                platform_name AS platform_name,
+                is_seasonal AS is_seasonal,
+                rank_score AS rank_score,
                 -- 销售原始聚合字段
-                SUM(sales_amt_cny_fi) AS sales_amt_cny_fi,
-                SUM(sales_qty) AS sales_qty,
-                MAX(sales_qty) AS max_sales_qty,
-                SUM(sales_gross_profit_cny_fi) AS sales_gross_profit_cny_fi,
-                SUM(sales_net_profit_cny_fi) AS sales_net_profit_cny_fi,
-                SUM(avg_sales_qty_7d) AS avg_sales_qty_7d,
+                sales_amt_cny_fi AS sales_amt_cny_fi,
+                sales_qty AS sales_qty,
+                sales_qty AS max_sales_qty,
+                sales_gross_profit_cny_fi AS sales_gross_profit_cny_fi,
+                sales_net_profit_cny_fi AS sales_net_profit_cny_fi,
+                avg_sales_qty_7d AS avg_sales_qty_7d,
                 -- 组织架构原始字段
-                MAX(newest_department_3_id) AS department_3_id,
-                MAX(newest_department_3_name) AS department_3_name,
-                MAX(newest_department_4_id) AS department_4_id,
-                MAX(newest_department_4_name) AS department_4_name,
-                MAX(newest_department_5_id) AS department_5_id,
-                MAX(newest_department_5_name) AS department_5_name,
+                newest_department_3_id AS department_3_id,
+                newest_department_3_name AS department_3_name,
+                newest_department_4_id AS department_4_id,
+                newest_department_4_name AS department_4_name,
+                newest_department_5_id AS department_5_id,
+                newest_department_5_name AS department_5_name,
                 -- 负责人原始字段
-                MAX(newest_charge_user_id) AS charge_user_id,
-                MAX(newest_charge_user_name) AS charge_user_name,
-                MAX(newest_channel_user_id) AS channel_user_id,
-                MAX(newest_channel_user_name) AS channel_user_name,
+                newest_charge_user_id AS charge_user_id,
+                newest_charge_user_name AS charge_user_name,
+                newest_channel_user_id AS channel_user_id,
+                newest_channel_user_name AS channel_user_name,
                 -- 广告原始聚合字段（仅保留基础数值，比率在外层计算）
-                SUM(amazon_impressions) AS amazon_impressions,
-                SUM(amazon_clicks) AS amazon_clicks,
-                SUM(amazon_ad_order_cnt + ebay_ad_order_cnt) AS ad_order_qty,
-                SUM(adv_fee_cny_fi) AS adv_fee_cny_fi,
-                SUM(amazon_ad_order_sales_amt + ebay_ad_order_sales_amt_cny_fi) AS ad_sales_amt,
-                SUM(order_cnt_30d) AS order_cnt_30d
+                amazon_impressions  AS amazon_impressions,
+                amazon_clicks  AS amazon_clicks,
+                amazon_ad_order_cnt + ebay_ad_order_cnt AS ad_order_qty,
+                adv_fee_cny_fi  AS adv_fee_cny_fi,
+                ad_order_sales_amt AS ad_sales_amt,
+                order_cnt_30d  AS order_cnt_30d,
+                first_inbound_date as first_inbound_date
          FROM ads.ads_alct_theory_profit_account_details_di
          WHERE dt >= date_trunc(date_sub(curdate(), interval 2 month), 'month')
-         GROUP BY dt, sku, site_id, platform_id
          ) t1
      LEFT JOIN (
         -- 库存数据快照（取当前日期前2天的最新数据）
