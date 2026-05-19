@@ -18,6 +18,10 @@ SELECT
     -- 销售核心指标
     t1.sales_amt_cny_fi AS 销售收入_不含税,
     t1.sales_qty AS 销售量,
+    -- 销售价格
+    t1.min_sale_price AS 最低销售价格,
+    t1.max_sale_price AS 最高销售价格,
+    -- IFNULL(ROUND(MIN(min_sale_price) + MAX(max_sale_price) / 2, 2), 0) AS sales_price_avg,
     t1.avg_sales_qty_7d AS `7天日均销量`,
     t1.max_sales_qty AS 最高销量,
 
@@ -106,7 +110,9 @@ FROM (
                 adv_fee_cny_fi  AS adv_fee_cny_fi,
                 ad_order_sales_amt AS ad_sales_amt,
                 order_cnt_30d  AS order_cnt_30d,
-                first_inbound_date as first_inbound_date
+                first_inbound_date as first_inbound_date,
+                min_sale_price,
+                max_sale_price
          FROM ads.ads_alct_theory_profit_account_details_di
          WHERE dt >= date_trunc(date_sub(curdate(), interval 2 month), 'month')
          ) t1
