@@ -7,13 +7,13 @@ SELECT
     t1.spu AS SPU编码,
     t1.sku AS SKU编码,
     t1.site_name AS 站点,
-    t1.oparation_mode AS 运营模式,
+    t1.sale_model AS 运营模式,
     t1.platform_name AS 平台,
     CONCAT_WS('/', t1.department_3_name, t1.department_4_name, t1.department_5_name) AS 部门,
     t1.charge_user_name AS 开发负责人,
     t1.channel_user_name AS 运营负责人,
     IF(t1.is_seasonal = 1, '是', '否') AS 是否是季节性产品,
-    t1.rank_score AS 产品等级,
+    t1.sale_status AS 产品等级,
 
     -- 销售核心指标
     t1.sales_amt_cny_fi AS 销售收入_不含税,
@@ -74,16 +74,16 @@ FROM (
                 sku,
                 site_id,
                 platform_id,
-                sku_category AS sku_category,
-                spu AS spu,
+                newest_spu AS sku_category,
+                newest_spu AS spu,
                 newest_spu_cn_name AS spu_name,
                 newest_sku_name AS sku_name,
                 key_word AS key_word,
                 site_name AS site_name,
-                oparation_mode AS oparation_mode,
+                newest_sale_model AS sale_model,
                 platform_name AS platform_name,
                 is_seasonal AS is_seasonal,
-                rank_score AS rank_score,
+                newest_sale_status AS sale_status,
                 -- 销售原始聚合字段
                 sales_amt_cny_fi AS sales_amt_cny_fi,
                 sales_qty AS sales_qty,
@@ -142,3 +142,10 @@ FROM (
                  site_id,
                  platform_id
         ) t2 ON t1.sku = t2.sku AND t1.site_id = t2.site_id AND t1.platform_id = t2.platform_id
+;
+select sku, platform_id, site_id
+from ads.ads_alct_theory_profit_account_details_di
+WHERE dt >= date_trunc(date_sub(curdate(), interval 1 month), 'month')
+group by sku, platform_id, site_id
+having count(distinct is_seasonal) > 1
+;
