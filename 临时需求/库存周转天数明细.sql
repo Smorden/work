@@ -32,7 +32,7 @@ with dim_sku as (
     )
 , profit_product_cost as (
     select dt, sku, sum(-product_cost_cny_fi) as profit_product_cost
-    from dws.dws_alct_theory_profit_sum_di
+    from dws.dws_alct_theory_profit_sum_order_di
     where dt between date_sub(curdate(), interval 60 day) and date_sub(curdate(), interval 1 day)
     group by dt, sku
     )
