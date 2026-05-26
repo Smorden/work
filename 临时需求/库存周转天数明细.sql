@@ -27,7 +27,7 @@ with dim_sku as (
     from dws.dws_ivct_sku_site_future_oversea_stock_ds
     where dt = curdate()
             and stock_date between curdate()
-        and last_day(date_add(curdate(), interval 1 month))
+        and last_day(date_add(curdate(), interval 2 month))
     group by stock_date, sku
     )
 , profit_product_cost as (
