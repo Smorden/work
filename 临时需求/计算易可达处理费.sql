@@ -14,7 +14,7 @@ create table if not exists temp.temp_dwd_dim_tcct_ykd_handing_fee_df
 ) Duplicate KEY(cal_type,country)
 comment "ykd处理费报价-si"
 DISTRIBUTED BY HASH(country) BUCKETS 1
-PROPERTIES("light_schema_change" = "true");
+PROPERTIES("light_schema_change" = "true")
 ;
 
 with stock_out_order as (
@@ -86,6 +86,9 @@ with stock_out_order as (
           , instockfee
           , instock_additionfee
           , currency
+        ,case a.country when '英国' then 0.75
+        when '德国' then 0.85
+        else 1 end as discount_rate
         from
             temp.temp_dwd_dim_tcct_ykd_handing_fee_df as a
             left join dwd.dwd_dim_country_df          as b
@@ -106,12 +109,12 @@ with stock_out_order as (
             sw.*
           , ifnull(ceil((sw.sku_weight - si.start_weight) / 1000) *
                    (si.outstockfee_additionfee) + si.outstockfee,
-                   0)*quantity                                    as handle_fee_si
-          , ifnull(pc.outstockfee, 0)                    as handle_fee_parcel
+                   0)*quantity*si.discount_rate                                    as handle_fee_si
+          , ifnull(pc.outstockfee*pc.discount_rate , 0)                   as handle_fee_parcel
           , ifnull(ceil((sw.sku_weight - si.start_weight) / 1000) *
                    (si.outstockfee_additionfee) + si.outstockfee, 0)*quantity *
-            er.currency_rate                             as handle_fee_si_cny
-          , ifnull(pc.outstockfee, 0) * er.currency_rate as handle_fee_parcel_cny
+            er.currency_rate *si.discount_rate                            as handle_fee_si_cny
+          , ifnull(pc.outstockfee*pc.discount_rate, 0) * er.currency_rate  as handle_fee_parcel_cny
             , si.currency
         from
             parcel_sku_weight          as sw
@@ -138,7 +141,7 @@ select
      , handle_fee_si + handle_fee_parcel as 处理费原币
     , handle_fee_si_cny + handle_fee_parcel_cny as 处理费rmb
 from result
--- where dt between  '2026-04-01' and '2026-04-30'
+where dt between  '2026-04-01' and '2026-04-30'
 order by dt, parcel_id, sku
 ;
 -- 入库处理费
