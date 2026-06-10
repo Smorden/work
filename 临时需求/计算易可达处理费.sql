@@ -88,7 +88,7 @@ with stock_out_order as (
           , currency
         ,case a.country when '英国' then 0.75
         when '德国' then 0.85
-        else 1 end as discount_rate
+        else 0.85 end as discount_rate
         from
             temp.temp_dwd_dim_tcct_ykd_handing_fee_df as a
             left join dwd.dwd_dim_country_df          as b
@@ -149,11 +149,16 @@ with stock_out_order as (
     select dt, order_num, sku, order_num_origin
              , warehouse_id, qty, stock_order_type_name
     from dwd.dwd_fact_ivct_ic_stock_in_order_di
-    where dt between  '2026-03-01' and '2026-04-30'
+    where dt between '2026-02-01' and '2026-05-31'
       AND record_status = 1
       and warehouse_id <> 1
       and qty > 0
       and order_status = 3
+    )
+   , third_inbound_order as (
+       select ship_no, inbound_no
+       from dwd.dwd_dim_ivct_ship_info_ds
+       where dt = date_sub(curdate(), interval 1 day)
     )
   , parcel_sku as (
     select
@@ -165,12 +170,15 @@ with stock_out_order as (
       , wh.warehouse_cn_name
       , if(left(warehouse_en_name, 2) = 'US', left(warehouse_en_name, 3), left(warehouse_en_name, 2)) AS country
         , so.order_num, so.stock_order_type_name
+    , ti.inbound_no
     from stock_out_order as so
          join dwd.dwd_dim_warehouse_df as wh on wh.warehouse_id = so.warehouse_id
             and wh.warehouse_service_name = 'YKD'
+    left join third_inbound_order as ti on ti.ship_no = so.order_num_origin
     )
   , dim_sku as (
-    select dt, sku, weight as sku_weight from dwd.dwd_dim_sku_ds where dt between '2026-03-01' and '2026-04-30'
+    select dt, sku, weight as sku_weight from dwd.dwd_dim_sku_ds
+    where dt between '2026-02-01' and '2026-05-31'
     )
   , parcel_sku_weight as (
     select
@@ -200,6 +208,9 @@ with stock_out_order as (
       , instockfee
       , instock_additionfee
       , currency
+      ,case a.country when '英国' then 0.75
+                      when '德国' then 0.85
+                      else 0.85 end as discount_rate
     from
         temp.temp_dwd_dim_tcct_ykd_handing_fee_df as a
         left join dwd.dwd_dim_country_df          as b
@@ -213,16 +224,16 @@ with stock_out_order as (
       , currency_rate
     from dwd.dwd_dim_exchange_rate_df
     where
-        start_date between '2026-03-01' and '2026-04-30'
+        start_date between '2026-02-01' and '2026-05-31'
     )
   , result as (
     select
         sw.*
       , ifnull(ceil((sw.sku_weight - si.start_weight) / 1000) *
                (si.instock_additionfee) + si.instockfee,
-               0)*quantity                                    as handle_fee_si
+               0)*quantity*si.discount_rate                                    as handle_fee_si
       , ifnull(ceil((sw.sku_weight - si.start_weight) / 1000) *
-               (si.instock_additionfee) + si.instockfee, 0)*quantity *
+               (si.instock_additionfee) + si.instockfee, 0)*quantity*si.discount_rate *
         er.currency_rate                             as handle_fee_si_cny
       , si.currency
     from
@@ -236,6 +247,7 @@ with stock_out_order as (
 select
     dt 入库日期, order_num 入库单号
                , order_num_origin 源单号
+     , inbound_no as 三方入库单号
      ,stock_order_type_name 入库类型
                , sku, quantity 数量
                , sku_weight sku重量g
