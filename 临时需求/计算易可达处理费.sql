@@ -256,7 +256,7 @@ select
                , handle_fee_si  as 入库处理费原币
                , handle_fee_si_cny as 入库处理费rmb
 from result
--- where dt between  '2026-04-01' and '2026-04-30'
+where left(order_num_origin, 2) <> 'TZ'
 order by dt,order_num,sku
 ;
 
