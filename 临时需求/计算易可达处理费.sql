@@ -186,9 +186,9 @@ from dwd.dwd_fact_lgct_tail_bill_transaction_di
 where bill_amount > 0
 and warehouse_service_name = 'YKD'
 and record_status = 1
-and dt between '2026-03-01' and '2026-04-30'
+and dt between '2026-03-01' and '2026-03-31'
 and sh_fee_item_name = '海外仓处理费'
-and parcel_id = 'FH177494441491592746'
+and bill_calc_detail_str like '入库操作费%'
 ;
 /*select
     dt 出库日期, parcel_id 发货单号
@@ -212,7 +212,7 @@ with stock_out_order as (
     select dt, order_num, sku, order_num_origin
              , warehouse_id, qty, stock_order_type_name
     from dwd.dwd_fact_ivct_ic_stock_in_order_di
-    where dt between '2026-02-01' and '2026-05-31'
+    where dt >= '2025-01-01'
       AND record_status = 1
       and warehouse_id <> 1
       and qty > 0
@@ -223,9 +223,19 @@ with stock_out_order as (
        from dwd.dwd_dim_ivct_ship_info_ds
        where dt = date_sub(curdate(), interval 1 day)
     )
+   , transaction_bill as (
+    select dt, calc_bill_time, bill_generated_time, third_party_no, bill_amount, currency_code
+                         ,warehouse_id
+    from dwd.dwd_fact_lgct_tail_bill_transaction_di
+    where warehouse_service_name = 'YKD'
+      and record_status = 1
+      and dt between '2026-03-01' and '2026-03-31'
+      and sh_fee_item_name = '海外仓处理费'
+      and bill_calc_detail_str like '入库操作费%'
+    )
   , parcel_sku as (
     select
-        so.dt
+        tb.dt
       , so.order_num_origin
       , so.sku
       , so.qty as quantity
@@ -234,14 +244,18 @@ with stock_out_order as (
       , if(left(warehouse_en_name, 2) = 'US', left(warehouse_en_name, 3), left(warehouse_en_name, 2)) AS country
         , so.order_num, so.stock_order_type_name
     , ti.inbound_no
+    , tb.third_party_no
+    , ti.ship_no
     from stock_out_order as so
          join dwd.dwd_dim_warehouse_df as wh on wh.warehouse_id = so.warehouse_id
             and wh.warehouse_service_name = 'YKD'
     left join third_inbound_order as ti on ti.ship_no = so.order_num_origin
+    join transaction_bill as tb on tb.third_party_no = ifnull(ti.inbound_no, so.order_num_origin)
     )
   , dim_sku as (
-    select dt, sku, weight as sku_weight from dwd.dwd_dim_sku_ds
-    where dt between '2026-02-01' and '2026-05-31'
+    select dt, sku, weight as sku_weight
+    from dwd.dwd_dim_sku_ds
+    where dt between '2026-03-01' and '2026-03-31'
     )
   , parcel_sku_weight as (
     select
@@ -253,8 +267,8 @@ with stock_out_order as (
             on sku.dt = ps.dt and sku.sku = ps.sku
         )
   , handle_fee_price AS (
-    select
-        cal_type
+    select dt
+       , cal_type
       , case a.country
             when '新泽西'
                 then 'USE'
@@ -279,7 +293,7 @@ with stock_out_order as (
         left join dwd.dwd_dim_country_df          as b
             on b.country_cn_name = a.country
     )
-  , exchange_rate as (
+/*  , exchange_rate as (
     select
         currency_code
       , start_date
@@ -288,38 +302,56 @@ with stock_out_order as (
     from dwd.dwd_dim_exchange_rate_df
     where
         start_date between '2026-02-01' and '2026-05-31'
-    )
+    )*/
   , result as (
     select
         sw.*
       , ifnull(ceil((sw.sku_weight - si.start_weight) / 1000) *
                (si.instock_additionfee) + si.instockfee,
                0)*quantity*si.discount_rate                                    as handle_fee_si
-      , ifnull(ceil((sw.sku_weight - si.start_weight) / 1000) *
+/*      , ifnull(ceil((sw.sku_weight - si.start_weight) / 1000) *
                (si.instock_additionfee) + si.instockfee, 0)*quantity*si.discount_rate *
-        er.currency_rate                             as handle_fee_si_cny
+        er.currency_rate                             as handle_fee_si_cny*/
       , si.currency
     from
         parcel_sku_weight          as sw
         left join handle_fee_price as si
             on si.country = sw.country and sw.sku_weight > si.start_weight and sw.sku_weight <= si.end_weight and
                si.cal_type = 1
-        left join exchange_rate    as er
-            on sw.dt between er.start_date and er.end_date and er.currency_code = si.currency
+            and si.dt = date_trunc(sw.dt, 'month')
+/*        left join exchange_rate    as er
+            on sw.dt between er.start_date and er.end_date and er.currency_code = si.currency*/
     )
-select
-    dt 入库日期, order_num 入库单号
-               , order_num_origin 源单号
-     , inbound_no as 三方入库单号
-     ,stock_order_type_name 入库类型
-               , sku, quantity 数量
-               , sku_weight sku重量g
-               , warehouse_cn_name 仓库
-               , currency 币种
-               , handle_fee_si  as 入库处理费原币
-               , handle_fee_si_cny as 入库处理费rmb
-from result
-where left(order_num_origin, 2) <> 'TZ'
-order by dt,order_num,sku
+select tb.calc_bill_time as 记账时间
+, tb.bill_generated_time as 费用发生时间, tb.third_party_no as 三方单号
+     ,rs.order_num as 入库单号
+     ,rs.ship_no as 调拨单号
+, tb.currency_code 币种
+, tb.bill_amount 账单费用
+, ifnull(rs.handle_fee, 0) as 计算费用
+from transaction_bill as tb
+     left join (select third_party_no, sum(handle_fee_si) as handle_fee
+                    , group_concat(distinct order_num) as order_num
+                , max(ship_no) as ship_no
+                from result
+                group by third_party_no
+                ) as rs on rs.third_party_no = tb.third_party_no
+where rs.third_party_no is null
+order by tb.calc_bill_time, tb.bill_generated_time, tb.third_party_no
 ;
-
+select *
+from dwd.dwd_fact_ivct_ic_stock_in_order_di
+where order_num_origin = 'RVG11497-260310-0003'
+;
+select *
+from dwd.dwd_fact_ivct_ic_stock_out_order_di
+where order_num_origin = ' RVG11497-260326-0021'
+;
+select * from dwd.dwd_dim_ivct_ship_info_ds
+where dt = '2026-06-10'
+and inbound_no = 'RVG11497-260310-0003'
+;
+select *
+from dwd.dwd_fact_lgct_tail_bill_transaction_di
+where third_party_no = 'RVG11497-251220-0005'
+;
