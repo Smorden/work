@@ -44,8 +44,10 @@ join (
     select sku, replace(sku_name, '|||', '%') as sku_name
     from dwd.dwd_dim_sku_ds
     where dt = date_sub(curdate(), interval 1 day)
+        and sku_status = '在售'
         ) as c on c.sku = a.SKU编码
 left join sku_tag as d on d.sku = a.SKU编码
+where b.country_code = 'US'
 order by a.SKU编码, b.country_code
 ;
 select *
