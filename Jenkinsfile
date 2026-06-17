@@ -1,4 +1,3 @@
-Jenkinsfile (Declarative Pipeline)
 /* Requires the Docker Pipeline plugin */
 pipeline {
     agent { docker { image 'maven:3.9.16-eclipse-temurin-21-alpine' } }
