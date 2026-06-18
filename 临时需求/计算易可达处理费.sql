@@ -1,21 +1,52 @@
-drop table temp.temp_dwd_dim_tcct_ykd_handing_fee_df;
-create table if not exists temp.temp_dwd_dim_tcct_ykd_handing_fee_df
+drop table temp.temp_dwd_dim_tcct_tail_handing_fee_df;
+create table if not exists temp.temp_dwd_dim_tcct_tail_handing_fee_df
 (
     dt date comment "报价日期",
-    cal_type                tinyint comment '1:单个si，2多个si按包裹附加',
+    cal_type                tinyint comment '1:单个si，2多个si按包裹附加,3入库卸货费，按体积计算，入库处理费_续重费 * 体积',
     country                 varchar(50) comment "国家",
     start_weight            int comment "起始重量",
     end_weight              int comment "结束重量",
     outstockfee             decimal(26, 8) comment "出库处理费",
     outstockfee_additionfee decimal(26, 8) comment "出库处理费_续重费",
     instockfee              decimal(26, 8) comment "入库处理费",
-    instock_additionfee     decimal(26, 8) comment "入库出库费_续重费",
+    instock_additionfee     decimal(26, 8) comment "入库处理费_续重费",
     currency                varchar(10) comment "报价币种",
+    warehouse_service_name varchar(50) comment "仓库服务名称",
     etl_create_time         datetime default CURRENT_TIMESTAMP COMMENT "etl执行时间"
 ) Duplicate KEY(dt, cal_type,country)
-comment "ykd处理费报价-si"
+comment "尾程处理费报价-si"
 DISTRIBUTED BY HASH(dt) BUCKETS 1
 PROPERTIES("light_schema_change" = "true")
+;
+insert into temp.temp_dwd_dim_tcct_tail_handing_fee_df
+    (
+      dt
+,cal_type
+,country
+,start_weight
+,end_weight
+,outstockfee
+,outstockfee_additionfee
+,instockfee
+,instock_additionfee
+,currency
+    ,warehouse_service_name
+    )
+select dt
+  ,cal_type
+  ,country
+  ,start_weight
+  ,end_weight
+  ,outstockfee
+  ,outstockfee_additionfee
+  ,instockfee
+  ,instock_additionfee
+  ,currency
+  ,'YKD' as warehouse_service_name
+    from temp.temp_dwd_dim_tcct_ykd_handing_fee_df
+;
+SELECT *
+FROM temp.temp_dwd_dim_tcct_tail_handing_fee_df
 ;
 select calc_bill_time, bill_generated_time, parcel_id, third_party_no, currency_code, bill_amount
 from dwd.dwd_fact_lgct_tail_bill_transaction_di
@@ -336,7 +367,7 @@ from transaction_bill as tb
                 from result
                 group by third_party_no
                 ) as rs on rs.third_party_no = tb.third_party_no
-where rs.third_party_no is null
+-- where rs.third_party_no is null
 order by tb.calc_bill_time, tb.bill_generated_time, tb.third_party_no
 ;
 select *
@@ -354,4 +385,31 @@ and inbound_no = 'RVG11497-260310-0003'
 select *
 from dwd.dwd_fact_lgct_tail_bill_transaction_di
 where third_party_no = 'RVG11497-251220-0005'
+;
+select distinct left(bill_calc_detail_str, 5)
+from dwd.dwd_fact_lgct_tail_bill_transaction_di
+where warehouse_service_name = '4PX'
+  and record_status = 1
+  and dt between '2026-04-01' and '2026-04-30'
+  -- and sh_fee_item_name = '海外仓处理费'
+  and left(bill_calc_detail_str, 2) in ('入库','出库')
+;
+select distinct warehouse_cn_name
+from dwd.dwd_fact_lgct_tail_bill_transaction_di
+where warehouse_service_name = '4PX'
+  and record_status = 1
+  and dt between '2026-03-01' and '2026-04-30'
+      -- and sh_fee_item_name = '海外仓处理费'
+  and left(bill_calc_detail_str, 2) = '出库'
+;
+select dt, order_num, sku, order_num_origin
+         , warehouse_id, qty, stock_order_type_name
+from dwd.dwd_fact_ivct_ic_stock_in_order_di
+where dt >= '2026-04-01'
+  AND record_status = 1
+  and warehouse_id <> 1
+  and qty > 0
+  and order_status = 3
+and warehouse_id in (select warehouse_id from dwd.dwd_dim_warehouse_df where warehouse_service_name = '4PX')
+AND stock_order_type_name= '调拨入库'
 ;
