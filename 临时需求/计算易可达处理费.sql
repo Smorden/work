@@ -89,10 +89,10 @@ with stock_out_order as (
        and cancel_status = 2
     )*/
    , transaction_bill as (
-    select dt, calc_bill_time, bill_generated_time, parcel_id, third_party_no, currency_code, bill_amount
+    select dt, calc_bill_time, bill_generated_time, parcel_id, third_party_no, currency_code, bill_amount, warehouse_cn_name
     from dwd.dwd_fact_lgct_tail_bill_transaction_di
     where warehouse_service_name = 'YKD'
-      and dt between '2026-03-01' and '2026-04-30'
+      and dt between '2026-05-01' and '2026-05-31'
       and sh_fee_item_name = '海外仓处理费'
       and bill_calc_detail_str not like '入库操作费%'
       and record_status = 1
@@ -116,7 +116,7 @@ with stock_out_order as (
   , dim_sku as (
         select dt, sku, weight as sku_weight
         from dwd.dwd_dim_sku_ds
-        where dt between '2026-01-01' and '2026-04-30'
+        where dt between '2026-05-01' and '2026-05-31'
         )
   , parcel_sku_weight as (
         select
@@ -161,17 +161,8 @@ with stock_out_order as (
             temp.temp_dwd_dim_tcct_ykd_handing_fee_df as a
             left join dwd.dwd_dim_country_df          as b
                 on b.country_cn_name = a.country
+        where a.dt = '2026-04-01'
         )
-/*  , exchange_rate as (
-        select
-            currency_code
-          , start_date
-          , end_date
-          , currency_rate
-        from dwd.dwd_dim_exchange_rate_df
-        where
-            start_date between '2026-03-01' and '2026-04-30'
-        )*/
   , result as (
         select
             sw.*
@@ -189,11 +180,11 @@ with stock_out_order as (
             left join handle_fee_price as si
                 on si.country = sw.country and sw.sku_weight > si.start_weight and sw.sku_weight <= si.end_weight and
                    si.cal_type = 1
-                and si.dt = date_trunc(sw.dt, 'month')
+                -- and si.dt = date_trunc(sw.dt, 'month')
             left join handle_fee_price as pc
                 on pc.country = sw.country and sw.parcel_weight > pc.start_weight and
                    sw.parcel_weight <= pc.end_weight and pc.cal_type = 2 and sw.parcel_quantity > 1
-                and pc.dt = date_trunc(sw.dt, 'month')
+                -- and pc.dt = date_trunc(sw.dt, 'month')
 /*            left join exchange_rate    as er
                 on sw.dt between er.start_date and er.end_date and er.currency_code = si.currency
         */
@@ -203,13 +194,12 @@ select tb.calc_bill_time as 记账时间, tb.bill_generated_time as 费用发生
     , tb.currency_code 币种
     , tb.bill_amount 账单费用
     , ifnull(rs.handle_fee_out, 0) as 计算费用
+    , tb.warehouse_cn_name as 仓库
 from transaction_bill as tb
     left join (select parcel_id, sum(handle_fee_si + handle_fee_parcel) as handle_fee_out
         from result
         group by parcel_id
         ) as rs on rs.parcel_id = tb.parcel_id
-where tb.dt between '2026-04-01' and '2026-04-30'
-and date(tb.bill_generated_time) = '2026-03-31'
 order by tb.calc_bill_time, tb.bill_generated_time, tb.parcel_id
     ;
 select *
@@ -398,7 +388,7 @@ select distinct warehouse_cn_name
 from dwd.dwd_fact_lgct_tail_bill_transaction_di
 where warehouse_service_name = '4PX'
   and record_status = 1
-  and dt between '2026-03-01' and '2026-04-30'
+  and dt between '2026-05-01' and '2026-05-31'
       -- and sh_fee_item_name = '海外仓处理费'
   and left(bill_calc_detail_str, 2) = '出库'
 ;
