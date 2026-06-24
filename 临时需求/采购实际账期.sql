@@ -104,14 +104,31 @@ order by
 ;
 -- 调整账期
 with
-    po_order as (
+   paid_bill as (
+    select
+    bill_code
+  , bill_line_code
+  , if(pay_time='1970-01-01 08:00:01', create_time, pay_time) as pay_time
+  , if(apply_amount=0, should_pay_amount, apply_amount)                  as pay_amt
+  , po_order_code
+  , original_order_code
+  , biz_order_code
+  , fee_code
+    from dwd.dwd_fact_pcct_payment_apply_bill_line_df
+    where
+    create_time >= '2026-05-01'
+    and pay_status <> 2
+    and bill_type = 1
+    and fee_code in ('goods_pre_payment', 'goods_should_payment')
+    )
+    , po_order as (
         select
-            po_order_code
+            a.po_order_code
           , max(po_order_date)                                                       as po_order_date
           , max(b.pay_method_alias)                                                  as pay_method_alias
           , max(a.account_period_days)                                               as account_period_days
           , max(b.cash_rate)                                                         as cash_rate
-          , sum(line_total_amount_with_tax)                                          as purchase_amt
+          , sum( line_total_amount_with_tax)                                    as purchase_amt
           , max(if(po_order_line_status <> 60 and shelved_qty < purchase_qty, 1, 0)) as is_onway
           , sum((purchase_qty - shelved_qty) * purchase_price_with_tax)              as onway_amt
           , max(if(estimated_transitwarehouse_arrival_date < curdate(), curdate(),
@@ -121,33 +138,25 @@ with
             , max(shelved_qty) as shelved_qty
         , max(purchase_qty) as purchase_qty
         ,max(po_order_status) as po_order_status
+        ,if(max(ifnull(c.pay_amt, 0)) >= sum(line_total_amount_with_tax), 1, 0) as is_full_paid
+          , sum(if(po_order_line_status>=60 and shelved_qty < purchase_qty
+            , shelved_qty * purchase_price_with_tax
+            , line_total_amount_with_tax)) as calc_amt
         from
             dwd.dwd_fact_pcct_purchase_order_line_df as a
             join dwd.dwd_dim_pcct_pay_method_df      as b
                 on a.pay_method_code = b.pay_code
+left join(
+    select po_order_code, sum(pay_amt) as pay_amt
+    from paid_bill
+    group by po_order_code
+    ) as c on c.po_order_code = a.po_order_code
         where
               po_order_date between '2026-05-01' and date_sub(curdate(), interval 1 day)
           and b.pay_method_alias <> '以销定结'
-          and not (a.po_order_line_status in (30, 70) and a.received_qty = 0)
+          and not (a.po_order_line_status in (30, 70) and a.shelved_qty = 0)
         group by
-            po_order_code
-        )
-  , paid_bill as (
-        select
-            bill_code
-          , bill_line_code
-          , if(pay_time='1970-01-01 08:00:01', create_time, pay_time) as pay_time
-          , if(apply_amount=0, should_pay_amount, apply_amount)                  as pay_amt
-          , po_order_code
-          , original_order_code
-          , biz_order_code
-          , fee_code
-        from dwd.dwd_fact_pcct_payment_apply_bill_line_df
-        where
-              create_time >= '2026-05-01'
-          and pay_status <> 2
-          and bill_type = 1
-          and fee_code in ('goods_pre_payment', 'goods_should_payment')
+            a.po_order_code
         )
   , stock_in_date as (
         select
@@ -158,13 +167,14 @@ with
         where
               stock_order_type_name = '采购入库'
           and date(calc_time) >= '2026-05-01'
+
         group by
             order_num
         )
-  , onway_stock as (
+  , open_order as (
         select *
         from po_order
-        where is_onway = 1
+        where is_full_paid = 0
         )
   , result as (
         select
@@ -175,10 +185,8 @@ with
           , pb.fee_code
           , pb.pay_time
           , pb.pay_amt
-          , coalesce(si.stock_in_date, mi.min_stock_in_date,
-                     po.estimated_transitwarehouse_arrival_date)                                                   as stock_in_date
-          , datediff(pb.pay_time, coalesce(si.stock_in_date, mi.min_stock_in_date,
-                                           po.estimated_transitwarehouse_arrival_date))                            as actual_account_period
+          , coalesce(si.stock_in_date, mi.min_stock_in_date, estimated_transitwarehouse_arrival_date)                                                   as stock_in_date
+          , datediff(pb.pay_time, coalesce(si.stock_in_date, mi.min_stock_in_date, estimated_transitwarehouse_arrival_date))                            as actual_account_period
           , po_account_period_days
           , purchase_amt
           , po_order_line_status
@@ -186,6 +194,7 @@ with
             paid_bill               as pb
             join po_order           as po
                 on po.po_order_code = pb.po_order_code
+                and po.is_full_paid = 1
             left join stock_in_date as si
                 on si.order_num = pb.original_order_code
             left join (
@@ -194,41 +203,19 @@ with
                 on mi.po_order_code = pb.po_order_code
         union all
         select
-            po.po_order_date
-          , po.po_order_code
-          , po.pay_method_alias
-          , sb.bill_code
-          , 'goods_should_payment'                                 as fee_code
-          , account_period_end_date                                as pay_time
-          , (should_sett_line_amount - write_off_line_amount)      as pay_amt
-          , original_order_date                                    as stock_in_date
-          , datediff(account_period_end_date, original_order_date) as actual_account_period
-          , po_account_period_days
-          , purchase_amt
-          , po_order_line_status
-        from
-            dwd.dwd_fact_pcct_purchase_settlement_bill_line_df as sb
-            join po_order                                      as po
-                on po.po_order_code = sb.po_order_code
-        where
-              sb.sett_type = 1
-          and sb.biz_type = 1
-          and (sb.paying_line_amount - sb.write_off_line_amount) <> 0
-        union all
-        select
             po_order_date
           , po_order_code
           , pay_method_alias
           , null                                                                                    as bill_code
           , 'goods_should_payment'                                                                  as fee_code
           , date_add(estimated_transitwarehouse_arrival_date, interval account_period_days + 5 day) as pay_time
-          , onway_amt * (1.0 - cash_rate)                                                           as pay_amt
+          , calc_amt * (1.0 - cash_rate)                                                           as pay_amt
           , estimated_transitwarehouse_arrival_date                                                 as stock_in_date
           , account_period_days + 5                                                                 as actual_account_period
           , po_account_period_days
           , purchase_amt
           , po_order_line_status
-        from onway_stock
+        from open_order
         where
             cash_rate < 1.0
         union all
@@ -237,23 +224,31 @@ with
           , os.po_order_code
           , pay_method_alias
           , null                                                         as bill_code
-          , 'goods_should_payment'                                       as fee_code
-          , curdate()                                                    as pay_time
-          , purchase_amt * cash_rate                                     as pay_amt
+          , 'goods_pre_payment'                                       as fee_code
+          , po_order_date                                                    as pay_time
+          , calc_amt * cash_rate                                     as pay_amt
           , estimated_transitwarehouse_arrival_date                      as stock_in_date
-          , datediff(curdate(), estimated_transitwarehouse_arrival_date) as actual_account_period
+          , datediff(po_order_date, estimated_transitwarehouse_arrival_date) as actual_account_period
           , po_account_period_days
           , purchase_amt
           , po_order_line_status
         from
-            onway_stock         as os
-            left join paid_bill as pb
-                on pb.po_order_code = os.po_order_code and pb.fee_code = 'goods_pre_payment'
+            open_order         as os
         where
               cash_rate > 0
-          and pb.po_order_code is null
         )
 select
+    po_order_date
+  , sum(pay_amt)                                                                  as pay_amt
+  , sum(pay_amt * cast(actual_account_period as decimalv3(26, 8))) / sum(pay_amt) as avg_account_period
+from result
+group by
+    po_order_date
+order by
+    po_order_date
+;
+-- select * from result where po_order_code = 'POB0012605120141';
+/*select
     rs.po_order_code
   , max(rs.purchase_amt)
   , sum(pay_amt)
@@ -268,7 +263,7 @@ group by
     rs.po_order_code
 having
       max(rs.purchase_amt) - sum(pay_amt) > 1
-;
+;*/
 /*select
     pay_method_alias
   , sum(pay_amt)                                                                  as pay_amt
@@ -281,16 +276,7 @@ group by
 order by
     pay_method_alias
 ;*/
-select
-    po_order_date
-  , sum(pay_amt)                                                                  as pay_amt
-  , sum(pay_amt * cast(actual_account_period as decimalv3(26, 8))) / sum(pay_amt) as avg_account_period
-from result
-group by
-    po_order_date
-order by
-    po_order_date
-;
+
 select pay_time, pay_status, bill_status,apply_amount, po_order_code, fee_code
 from dwd.dwd_fact_pcct_payment_apply_bill_line_df
 where po_order_code = 'POB0012605190099'
