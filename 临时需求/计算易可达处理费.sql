@@ -203,6 +203,11 @@ from transaction_bill as tb
 order by tb.calc_bill_time, tb.bill_generated_time, tb.parcel_id
     ;
 select *
+from dwd.dwd_dim_tcct_ykd_product_info_ds
+where dt = '2026-05-01'
+and goods_code = 'OTJSHHUAJIA002'
+;
+select *
 from dwd.dwd_fact_lgct_tail_bill_transaction_di
 where bill_amount > 0
 and warehouse_service_name = 'YKD'
