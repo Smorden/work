@@ -74,7 +74,7 @@ where dt = '2026-04-01'
 ;
 with stock_out_order as (
     select dt, order_num, sku, order_num_origin as parcel_id
-             , warehouse_id, qty
+             , warehouse_id, qty, goods_code
     from dwd.dwd_fact_ivct_ic_stock_out_order_di
     where dt >=  '2026-01-01'
         AND record_status = 1
@@ -102,6 +102,7 @@ with stock_out_order as (
             tb.dt
           , so.parcel_id
           , so.sku
+             , so.goods_code
           , so.qty as quantity
           , wh.warehouse_en_name
              , wh.warehouse_cn_name
@@ -118,10 +119,16 @@ with stock_out_order as (
         from dwd.dwd_dim_sku_ds
         where dt between '2026-05-01' and '2026-05-31'
         )
+   ,product_info as (
+       select dt, goods_code, sku_weight
+       from dwd.dwd_dim_tcct_ykd_product_info_ds
+       where dt between '2026-05-01' and '2026-05-31'
+    )
   , parcel_sku_weight as (
         select
             ps.*
           , sku.sku_weight
+             ,pi.sku_weight as goods_weight
           , sum(quantity) over (partition by ps.parcel_id)                  as parcel_quantity
           , sum(sku.sku_weight * quantity) over (partition by ps.parcel_id) as parcel_weight
           , row_number() over (partition by ps.parcel_id order by ps.sku)      as rn
@@ -132,6 +139,7 @@ with stock_out_order as (
             parcel_sku   as ps
             join dim_sku as sku
                 on sku.dt = ps.dt and sku.sku = ps.sku
+                left join product_info as pi on pi.dt = ps.dt and pi.goods_code = ps.goods_code
             left join dwd.dwd_fact_tcct_parcel_outbound_summary_di as os on os.parcel_id = ps.parcel_id
         )
   , handle_fee_price AS (
@@ -189,6 +197,13 @@ with stock_out_order as (
                 on sw.dt between er.start_date and er.end_date and er.currency_code = si.currency
         */
         )
+select rs.parcel_id 发货单号, sku, goods_code 货品, quantity 数量, sku_weight sku重量, goods_weight 货品重量
+from result as rs
+join temp.temp_parcel_id as tp on tp.parcel_id = rs.parcel_id
+order by rs.parcel_id, sku
+;
+truncate table temp.temp_parcel_id
+;
 select tb.calc_bill_time as 记账时间, tb.bill_generated_time as 费用发生时间, tb.parcel_id 发货单号
     , tb.third_party_no 三方单号
     , tb.currency_code 币种
@@ -204,7 +219,7 @@ order by tb.calc_bill_time, tb.bill_generated_time, tb.parcel_id
     ;
 select *
 from dwd.dwd_dim_tcct_ykd_product_info_ds
-where dt = '2026-05-01'
+where dt = '2026-06-23'
 and goods_code = 'OTJSHHUAJIA002'
 ;
 select *
