@@ -127,10 +127,11 @@ with stock_out_order as (
   , parcel_sku_weight as (
         select
             ps.*
-          , sku.sku_weight
+          , ifnull(pi.sku_weight,sku.sku_weight) as sku_weight
              ,pi.sku_weight as goods_weight
+             ,sku.sku_weight as origin_sku_weight
           , sum(quantity) over (partition by ps.parcel_id)                  as parcel_quantity
-          , sum(sku.sku_weight * quantity) over (partition by ps.parcel_id) as parcel_weight
+          , sum(ifnull(pi.sku_weight,sku.sku_weight) * quantity) over (partition by ps.parcel_id) as parcel_weight
           , row_number() over (partition by ps.parcel_id order by ps.sku)      as rn
         , os.platform_outbound_order_no
         , os.platform_outbound_complete_time
@@ -197,24 +198,23 @@ with stock_out_order as (
                 on sw.dt between er.start_date and er.end_date and er.currency_code = si.currency
         */
         )
-select rs.parcel_id 发货单号, sku, goods_code 货品, quantity 数量, sku_weight sku重量, goods_weight 货品重量
+/*select rs.parcel_id 发货单号, sku, goods_code 货品, quantity 数量, origin_sku_weight sku重量, goods_weight 货品重量
 from result as rs
 join temp.temp_parcel_id as tp on tp.parcel_id = rs.parcel_id
 order by rs.parcel_id, sku
-;
-truncate table temp.temp_parcel_id
-;
+;*/
 select tb.calc_bill_time as 记账时间, tb.bill_generated_time as 费用发生时间, tb.parcel_id 发货单号
     , tb.third_party_no 三方单号
     , tb.currency_code 币种
     , tb.bill_amount 账单费用
-    , ifnull(rs.handle_fee_out, 0) as 计算费用
+    , FLOOR(ifnull(rs.handle_fee_out, 0) * POW(10, 2) + 0.5) / POW(10, 2) as 计算费用
     , tb.warehouse_cn_name as 仓库
 from transaction_bill as tb
     left join (select parcel_id, sum(handle_fee_si + handle_fee_parcel) as handle_fee_out
         from result
         group by parcel_id
         ) as rs on rs.parcel_id = tb.parcel_id
+-- where tb.bill_amount - FLOOR(ifnull(rs.handle_fee_out, 0) * POW(10, 2) + 0.5) / POW(10, 2) > 0.01
 order by tb.calc_bill_time, tb.bill_generated_time, tb.parcel_id
     ;
 select *
