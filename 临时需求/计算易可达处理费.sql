@@ -212,7 +212,7 @@ select tb.calc_bill_time as 记账时间, tb.bill_generated_time as 费用发生
 ,goods_detail as 货品明细
 from transaction_bill as tb
     left join (select parcel_id, sum(handle_fee_si + handle_fee_parcel) as handle_fee_out
-               , group_concat(concat_ws(',',goods_code, quantity, cast(sku_weight as double)), ';') as goods_detail
+               , group_concat(concat_ws(',',goods_code, quantity, cast(sku_weight as double)), '; ') as goods_detail
         from result
         group by parcel_id
         ) as rs on rs.parcel_id = tb.parcel_id
