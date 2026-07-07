@@ -63,3 +63,23 @@ FROM
 left join (select * from dwd.dwd_dim_dashboard_filter_selection_nf where filter_key = 25) fs on fs.selection_key = aa.pickup_method
     where aa.po_order_date >= '2025-01-01'
     ;
+-- 新品测款明细
+SELECT
+    po_order_code AS 采购订单号,
+    po_order_date as 采购日期,
+    aa.supplier_name AS 供应商,
+    CASE po_order_line_status WHEN '10' THEN '待供应商确认' WHEN '20' THEN '待交货' WHEN '30' THEN '供应商拒绝' WHEN '40' THEN '变更审核中' WHEN '50' THEN '交货中' WHEN '60' THEN '交货完成' WHEN '70' THEN '已关闭' END AS 订单状态,
+    aa.sku AS SKU编码,
+    aa.sku_cn_name AS SKU名称,
+    purchase_qty AS 采购数量,
+    aa.purchase_box_pack_qty as 装箱数,
+    aa.purchase_box_qty AS 采购箱数,
+    CASE origin_po_line_est_tr_wh_arrival_date WHEN '1970-01-01' THEN '' ELSE origin_po_line_est_tr_wh_arrival_date END AS 预计到货日期,
+    demand_warehouse_cn_name AS 需求仓库,
+    aa.purchase_subject_name AS 采购组织,aa.spu
+FROM
+    ads.ads_pad_purchase_excute_details_df as aa
+    left join (select * from dwd.dwd_dim_dashboard_filter_selection_nf where filter_key = 25) fs on fs.selection_key = aa.pickup_method
+join (select distinct sku from dwd.dwd_dim_sku_tag_df where tag_name = '新品测款') as tg on tg.sku = aa.sku
+where aa.po_order_date = '2026-07-06'
+;
