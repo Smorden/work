@@ -92,7 +92,7 @@ with stock_out_order as (
     select dt, calc_bill_time, bill_generated_time, parcel_id, third_party_no, currency_code, bill_amount, warehouse_cn_name
     from dwd.dwd_fact_lgct_tail_bill_transaction_di
     where warehouse_service_name = 'YKD'
-      and dt between '2026-05-01' and '2026-05-31'
+      and dt between '2026-06-01' and '2026-06-30'
       and sh_fee_item_name = '海外仓处理费'
       and bill_calc_detail_str not like '入库操作费%'
       and record_status = 1
@@ -117,12 +117,12 @@ with stock_out_order as (
   , dim_sku as (
         select dt, sku, weight as sku_weight
         from dwd.dwd_dim_sku_ds
-        where dt between '2026-05-01' and '2026-05-31'
+        where dt between '2026-06-01' and '2026-06-30'
         )
    ,product_info as (
        select dt, goods_code, sku_weight
        from dwd.dwd_dim_tcct_ykd_product_info_ds
-       where dt between '2026-05-01' and '2026-05-31'
+       where dt between '2026-06-01' and '2026-06-30'
     )
   , parcel_sku_weight as (
         select
@@ -207,14 +207,14 @@ select tb.calc_bill_time as 记账时间, tb.bill_generated_time as 费用发生
     , tb.third_party_no 三方单号
     , tb.currency_code 币种
     , tb.bill_amount 账单费用
-    , FLOOR(ifnull(rs.handle_fee_out, 0) * POW(10, 2) + 0.5) / POW(10, 2) as 计算费用
+    , cast(FLOOR(ifnull(rs.handle_fee_out, 0) * POW(10, 2) + 0.5) / POW(10, 2) as decimal(10,2)) as 计算费用
+     ,tb.bill_amount - cast(FLOOR(ifnull(rs.handle_fee_out, 0) * POW(10, 2) + 0.5) / POW(10, 2) as decimal(10,2)) as 差异金额
     , tb.warehouse_cn_name as 仓库
-,goods_detail as 货品明细
+     , rs.goods_code 货品, rs.quantity 数量, rs.sku_weight 重量
 from transaction_bill as tb
-    left join (select parcel_id, sum(handle_fee_si + handle_fee_parcel) as handle_fee_out
-               , group_concat(concat_ws(',',goods_code, quantity, cast(sku_weight as double)), '; ') as goods_detail
+    left join (select parcel_id, handle_fee_si + handle_fee_parcel as handle_fee_out
+               , goods_code, quantity,sku_weight
         from result
-        group by parcel_id
         ) as rs on rs.parcel_id = tb.parcel_id
 -- where tb.bill_amount - FLOOR(ifnull(rs.handle_fee_out, 0) * POW(10, 2) + 0.5) / POW(10, 2) > 0.01
 order by tb.calc_bill_time, tb.bill_generated_time, tb.parcel_id
@@ -410,7 +410,7 @@ select distinct warehouse_cn_name
 from dwd.dwd_fact_lgct_tail_bill_transaction_di
 where warehouse_service_name = '4PX'
   and record_status = 1
-  and dt between '2026-05-01' and '2026-05-31'
+  and dt between '2026-06-01' and '2026-06-30'
       -- and sh_fee_item_name = '海外仓处理费'
   and left(bill_calc_detail_str, 2) = '出库'
 ;

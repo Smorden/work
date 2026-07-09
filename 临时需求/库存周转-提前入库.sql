@@ -9,7 +9,7 @@ with
           , sum(sales_out_amt) as sales_out_amt
         from dws.dws_alct_sales_out_details_di
         where
-            dt between date_sub(curdate(), interval 60 day) and date_sub(curdate(), interval 1 day)
+            dt between date_sub('2026-06-30', interval 59 day) and '2026-06-30'
         group by
             dt
           , sku
@@ -21,7 +21,7 @@ with
           , SUM(if(stock_stage = '海外仓在库', NVL(stock_amt, 0), 0)) as oversea_stock_amt
         from dws.dws_ivct_sc_asset_management_ds
         where
-            dt between date_sub(curdate(), interval 60 day) and date_sub(curdate(), interval 1 day)
+            dt between date_sub('2026-06-30', interval 59 day) and '2026-06-30'
         group by
             dt
           , sku
@@ -29,7 +29,7 @@ with
 ,  stock_in_order as (
     select dt, sku, order_num, order_num_origin, qty, warehouse_id
     from dwd.dwd_fact_ivct_ic_stock_in_order_di
-    where dt between date_sub(curdate(), interval 60 day) and date_sub(curdate(), interval 1 day)
+    where dt between date_sub('2026-06-30', interval 59 day) and '2026-06-30'
         and stock_order_type_name = '调拨入库'
     )
    , advance_inbound_amt as (
@@ -75,6 +75,7 @@ with
 select
     dt                                    日期
 , department_3_name                     部门
+     ,res.sku
   , sum(sales_out_amt)                 as 当日出库金额
   , sum(oversea_stock_amt)             as 当日海外仓库存金额
 , sum(advance_inbound_amt)             as 当日提前入库金额
@@ -86,9 +87,9 @@ where
     department_3_name not in ('', '产品部')
 group by
     department_3_name
-  , dt
+  , dt, res.sku
 order by
-    dt, department_3_name
+    dt, department_3_name, res.sku
 ;
 select count(distinct order_num)
 from dwd.dwd_fact_ivct_ic_stock_in_order_di
