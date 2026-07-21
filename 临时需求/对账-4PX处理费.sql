@@ -22,7 +22,7 @@ PROPERTIES("light_schema_change" = "true")
 select distinct left(bill_calc_detail_str, 5)
 from dwd.dwd_fact_lgct_tail_bill_transaction_di
 where warehouse_service_name = '4PX'
-  and dt between '2026-05-01' and '2026-05-31'
+  and dt between '2026-06-01' and '2026-06-30'
   and record_status = 1
 and bill_calc_detail_str like '出库%'
 ;
@@ -47,7 +47,7 @@ with stock_out_order as (
     select dt, calc_bill_time, bill_generated_time, parcel_id, third_party_no, currency_code, bill_amount,warehouse_cn_name
     from dwd.dwd_fact_lgct_tail_bill_transaction_di
     where warehouse_service_name = '4PX'
-      and dt between '2026-05-01' and '2026-05-31'
+      and dt between '2026-06-01' and '2026-06-30'
       and sh_fee_item_name = '海外仓处理费'
       and left(bill_calc_detail_str, 2) = '出库'
       and record_status = 1
@@ -72,12 +72,12 @@ with stock_out_order as (
   , dim_sku as (
     select dt, sku, weight as sku_weight
     from dwd.dwd_dim_sku_ds
-    where dt between '2026-05-01' and '2026-05-31'
+    where dt between '2026-06-01' and '2026-06-30'
     )
    , product_info as (
        select dt, sku, goods_code, sku_weight
        from dwd.dwd_dim_tcct_dsf_product_info_ds
-       where dt between '2026-05-01' and '2026-05-31'
+       where dt between '2026-06-01' and '2026-06-30'
     )
   , parcel_sku_weight as (
     select
@@ -148,17 +148,19 @@ with stock_out_order as (
                 on sw.dt between er.start_date and er.end_date and er.currency_code = si.currency
         */
     )
+
 -- select * from result where parcel_id = 'FH177487866578769715';
 select tb.calc_bill_time as 记账时间, tb.bill_generated_time as 费用发生时间, tb.parcel_id 发货单号
                                     , tb.third_party_no 三方单号
                                     , tb.currency_code 币种
                                     , tb.bill_amount 账单费用
                                     , ifnull(rs.handle_fee_out, 0) as 计算费用
+     ,cast(tb.bill_amount - ifnull(rs.handle_fee_out, 0) as decimal(10,2)) as 差额
 ,tb.warehouse_cn_name 仓库
 ,goods_detail as 货品明细
 from transaction_bill as tb
      left join (select parcel_id, sum(handle_fee_si ) as handle_fee_out
-                , group_concat(concat_ws(',',goods_code, quantity, cast(sku_weight as double)), '; ') as goods_detail
+                , group_concat(concat_ws(',',goods_code, quantity, cast(sku_weight as double)), ',') as goods_detail
                 from result
                 group by parcel_id
                 ) as rs on rs.parcel_id = tb.parcel_id
