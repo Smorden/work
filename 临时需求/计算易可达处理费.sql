@@ -92,7 +92,7 @@ with stock_out_order as (
     select dt, calc_bill_time, bill_generated_time, parcel_id, third_party_no, currency_code, bill_amount, warehouse_cn_name
     from dwd.dwd_fact_lgct_tail_bill_transaction_di
     where warehouse_service_name = 'YKD'
-      and dt between '2026-06-01' and '2026-06-30'
+      and dt between '2026-07-01' and '2026-07-31'
       and sh_fee_item_name = '海外仓处理费'
       and bill_calc_detail_str not like '入库操作费%'
       and record_status = 1
@@ -117,12 +117,12 @@ with stock_out_order as (
   , dim_sku as (
         select dt, sku, weight as sku_weight
         from dwd.dwd_dim_sku_ds
-        where dt between '2026-06-01' and '2026-06-30'
+        where dt between '2026-07-01' and '2026-07-31'
         )
    ,product_info as (
        select dt, goods_code, sku_weight
        from dwd.dwd_dim_tcct_ykd_product_info_ds
-       where dt between '2026-06-01' and '2026-06-30'
+       where dt between '2026-07-01' and '2026-07-31'
     )
   , parcel_sku_weight as (
         select
@@ -198,11 +198,13 @@ with stock_out_order as (
                 on sw.dt between er.start_date and er.end_date and er.currency_code = si.currency
         */
         )
-/*select rs.parcel_id 发货单号, sku, goods_code 货品, quantity 数量, origin_sku_weight sku重量, goods_weight 货品重量
-from result as rs
-join temp.temp_parcel_id as tp on tp.parcel_id = rs.parcel_id
-order by rs.parcel_id, sku
-;*/
+
+select parcel_id
+from result
+group by parcel_id
+having count(1) > 1
+;
+
 select tb.calc_bill_time as 记账时间, tb.bill_generated_time as 费用发生时间, tb.parcel_id 发货单号
     , tb.third_party_no 三方单号
     , tb.currency_code 币种
@@ -410,7 +412,7 @@ select distinct warehouse_cn_name
 from dwd.dwd_fact_lgct_tail_bill_transaction_di
 where warehouse_service_name = '4PX'
   and record_status = 1
-  and dt between '2026-06-01' and '2026-06-30'
+  and dt between '2026-07-01' and '2026-07-31'
       -- and sh_fee_item_name = '海外仓处理费'
   and left(bill_calc_detail_str, 2) = '出库'
 ;
