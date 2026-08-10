@@ -163,7 +163,8 @@ with stock_out_order as (
           , instock_additionfee
           , currency
         ,case a.country when '英国' then 0.75
-        when '德国' then 0.85
+            when '法国' then 0.8
+            when '西班牙' then 0.8
         else 0.85 end as discount_rate
         , dt
         from
@@ -198,13 +199,6 @@ with stock_out_order as (
                 on sw.dt between er.start_date and er.end_date and er.currency_code = si.currency
         */
         )
-
-select parcel_id
-from result
-group by parcel_id
-having count(1) > 1
-;
-
 select tb.calc_bill_time as 记账时间, tb.bill_generated_time as 费用发生时间, tb.parcel_id 发货单号
     , tb.third_party_no 三方单号
     , tb.currency_code 币种
@@ -218,6 +212,7 @@ from transaction_bill as tb
                , goods_code, quantity,sku_weight
         from result
         ) as rs on rs.parcel_id = tb.parcel_id
+-- where tb.warehouse_cn_name like '%法国%'
 -- where tb.bill_amount - FLOOR(ifnull(rs.handle_fee_out, 0) * POW(10, 2) + 0.5) / POW(10, 2) > 0.01
 order by tb.calc_bill_time, tb.bill_generated_time, tb.parcel_id
     ;
