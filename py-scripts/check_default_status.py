@@ -11,7 +11,9 @@
   pip install pymysql requests
 
 用法:
-  python check_default_status.py             # 查询并按需推送钉钉（状态正常时不推送）
+  python check_default_status.py             # 默认 online 环境，查询并按需推送钉钉
+  python check_default_status.py --online    # online 环境（显式），消息前缀「online环境：」
+  python check_default_status.py --pre       # pre 环境，数据库走 PRE_META_DB_ADDR，消息前缀「pre环境：」
   python check_default_status.py --no-send   # 只查询打印，不推送
   python check_default_status.py --force     # 强制推送，状态正常也发送（调试用）
 """
@@ -28,18 +30,45 @@ import urllib.parse
 import pymysql
 
 # ----------------------------- 配置区 -----------------------------
+# 所有敏感配置均从环境变量读取（由 gocron 任务「机密」注入），不再硬编码默认值。
+# 需要的机密名：
+#   ONLINE_META_DB_ADDR : online 环境数据库地址，格式 host:port（冒号分隔）
+#   PRE_META_DB_ADDR    : pre 环境数据库地址，格式 host:port（冒号分隔）
+#   BG_DB_USER          : 数据库用户名
+#   BG_DB_PASSWORD      : 数据库密码
+#   DINGTALK_TOKEN      : 钉钉机器人 access_token
+#   DINGTALK_SECRET     : 钉钉机器人加签密钥（SEC 开头）
 
-DB_HOST = os.getenv("DS_DB_HOST", "172.16.51.8")
-DB_PORT = int(os.getenv("DS_DB_PORT", "53366"))
-DB_USER = os.getenv("DS_DB_USER", "developer")
-DB_PASSWORD = os.getenv("DS_DB_PASSWORD", "developer123")
-DB_NAME = os.getenv("DS_DB_NAME", "dolphinscheduler")
-DINGTALK_TOKEN = os.getenv("DINGTALK_WEBHOOK_TOKEN", "d8b3b9fd753638590559ebcfa89ab11f8375b2d2ca1b33f03830ecb94cdc3b51")
-DINGTALK_SECRET = os.getenv("DINGTALK_WEBHOOK_SECRET", "SEC88ac7b12e6b90c7032e8c4f64f6cd234a3a946a650f42f1da798f9b333961935")
+
+def _parse_db_addr(raw: str, env_name: str) -> tuple:
+    """把 'host:port' 解析成 (host, int(port))。"""
+    if not raw or ":" not in raw:
+        raise RuntimeError(
+            f"环境变量 {env_name} 格式错误，应为 host:port，当前值: {raw!r}"
+        )
+    host, port = raw.rsplit(":", 1)
+    return host, int(port)
+
+
+DB_USER = os.getenv("BG_DB_USER")
+DB_PASSWORD = os.getenv("BG_DB_PASSWORD")
+DINGTALK_TOKEN = os.getenv("DINGTALK_TOKEN")
+DINGTALK_SECRET = os.getenv("DINGTALK_SECRET")
 WORKFLOW_NAME = "default"
 
-# 钉钉群「finebi同步任务报错」的 openConversationId（供 dws 方式发送）
-OPEN_CONVERSATION_ID = "cidjj2PDYlnI7WIWPieOs67hA=="
+# 环境配置：--online / --pre 决定数据库地址与消息前缀
+ENV_CONFIG = {
+    "online": {
+        "addr_env": "ONLINE_META_DB_ADDR",
+        "db_name": "dolphinscheduler",
+        "prefix": "online环境：",
+    },
+    "pre": {
+        "addr_env": "PRE_META_DB_ADDR",
+        "db_name": "dolphinscheduler_test",
+        "prefix": "pre环境：",
+    },
+}
 
 SQL = """
 select s.release_state
@@ -51,14 +80,14 @@ join t_ds_process_definition as d
 # ------------------------------------------------------------------
 
 
-def query_release_states() -> list:
+def query_release_states(host: str, port: int, db_name: str) -> list:
     """连接数据库并返回所有匹配记录的 release_state 列表。"""
     conn = pymysql.connect(
-        host=DB_HOST,
-        port=DB_PORT,
+        host=host,
+        port=port,
         user=DB_USER,
         password=DB_PASSWORD,
-        database=DB_NAME,
+        database=db_name,
         connect_timeout=10,
         read_timeout=15,
     )
@@ -134,20 +163,31 @@ def main():
     parser = argparse.ArgumentParser(description="DolphinScheduler default 工作流状态检查")
     parser.add_argument("--no-send", action="store_true", help="只查询并打印，不推送钉钉")
     parser.add_argument("--force", action="store_true", help="强制推送，即使工作流在线（release_state=1）也发送")
+    env_group = parser.add_mutually_exclusive_group()
+    env_group.add_argument("--online", dest="env", action="store_const", const="online",
+                           help="online 环境（默认，数据库用 ONLINE_META_DB_ADDR）")
+    env_group.add_argument("--pre", dest="env", action="store_const", const="pre",
+                           help="pre 环境（数据库用 PRE_META_DB_ADDR，库名 dolphinscheduler_test）")
+    parser.set_defaults(env="online")
     args = parser.parse_args()
 
-    print(f"[1/3] 连接 {DB_HOST}:{DB_PORT}/{DB_NAME} ...")
+    cfg = ENV_CONFIG[args.env]
+    db_host, db_port = _parse_db_addr(os.getenv(cfg["addr_env"]), cfg["addr_env"])
+    db_name = cfg["db_name"]
+    prefix = cfg["prefix"]
+
+    print(f"[1/3] 连接 {db_host}:{db_port}/{db_name}（{args.env} 环境）...")
     try:
-        states = query_release_states()
+        states = query_release_states(db_host, db_port, db_name)
     except Exception as e:
-        msg = f"default工作流状态检查失败：无法连接数据库或查询出错（{e}）"
+        msg = f"{prefix}{WORKFLOW_NAME}工作流状态检查失败：无法连接数据库或查询出错（{e}）"
         print(f"      {msg}")
         if not args.no_send:
             channel = send_dingtalk(msg)
             print(f"[2/3] 异常已推送钉钉（通道: {channel}）")
         return 1
 
-    msg = build_message(states)
+    msg = f"{prefix}{build_message(states)}"
     print(f"      查询到 {len(states)} 条调度记录，release_state={states}")
     print(f"[2/3] 判定结果: {msg}")
 
