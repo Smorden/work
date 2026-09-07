@@ -16,7 +16,7 @@ select
     ,b.settlement_amount as `实际结算费用金额`
 from ads.ads_finebi_transport_order_details_df as a
 left join dws.dws_lgct_first_trip_estimate_and_settlement_amt_df as b on b.transport_order_no = a.transport_order_no
-where a.actual_order_date >= '2026-02-01'
+where a.actual_order_date between '2026-06-01' and '2026-08-31'
 and a.logistics_status <> 'cancelled'
 order by a.actual_order_date, a.transport_order_no, b.sh_fee_item_name
 ;
