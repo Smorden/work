@@ -33,15 +33,6 @@ import time
 import urllib.error
 import urllib.request
 
-# Windows 下控制台/gocron/任务计划普遍按 GBK 解码子进程输出。
-# 直接输出 GBK 保持一致；遇到打不出的字符（如 emoji）降级为 ?，但脚本不会崩。
-_OUT_ENCODING = "gbk" if sys.platform == "win32" else "utf-8"
-for _stream in (sys.stdout, sys.stderr):
-    try:
-        _stream.reconfigure(encoding=_OUT_ENCODING, errors="replace")
-    except Exception:
-        pass
-
 # ---------------------------------------------------------------------------
 # 配置
 # ---------------------------------------------------------------------------
@@ -267,7 +258,7 @@ def do_checkin(args):
         raise SystemExit(2)
 
     d2 = body2.get("data", {})
-    print(f"结果：签到成功 [OK]  +{d2.get('credit', '-')} 分，连续签到 {d2.get('streak_days', '-')} 天。")
+    print(f"结果：签到成功 ✅  +{d2.get('credit', '-')} 分，连续签到 {d2.get('streak_days', '-')} 天。")
     return 0
 
 

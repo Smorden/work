@@ -514,6 +514,25 @@ def spawn_auto_chrome(port):
     return False
 
 
+def close_auto_chrome(browser):
+    """优雅关闭自动化 Chrome（Browser.close 走正常退出，Cookie 落盘）。
+
+    任务结束后关闭实例，避免残留进程被 gocron 等调度器弄成僵死状态；
+    会话数据已持久化在 ChromeAuto 目录，下次启动自动恢复登录态。
+    """
+    try:
+        session = browser.new_browser_cdp_session()
+        session.send("Browser.close")
+        time.sleep(2)
+        print("已优雅关闭自动化 Chrome（会话已落盘）")
+        return True
+    except Exception:
+        pass
+    # CDP 关不掉就强杀兜底
+    kill_auto_chrome()
+    return False
+
+
 def main():
     ap = argparse.ArgumentParser(description="xdgame.com 每日签到")
     ap.add_argument("--skip-login", action="store_true",
@@ -537,6 +556,7 @@ def main():
     with sync_playwright() as p:
         browser = None
         context = None
+        spawned_by_us = False
 
         if args.launch:
             # ---- 旧方式：独立启动 Chrome（独占 profile，需先关现有 Chrome）----
@@ -566,6 +586,7 @@ def main():
                 kill_auto_chrome()
                 if spawn_auto_chrome(spawn_port):
                     browser, port = connect_via_cdp(p, spawn_port)
+                    spawned_by_us = True
             if browser is None:
                 _print_cdp_help()
                 return 1
@@ -584,9 +605,14 @@ def main():
                 return 2
             return 0
         finally:
-            # 收尾：CDP 模式只断开连接，不关闭你的 Chrome
+            # 任务结束收尾：
+            # - 我们 spawn 的实例 → 优雅关闭（避免残留成僵死进程）
+            # - 外部已有实例     → 只断开连接，不动它
             if browser is not None:
-                browser.close()
+                if spawned_by_us:
+                    close_auto_chrome(browser)
+                else:
+                    browser.close()
             elif context is not None:
                 context.close()
 

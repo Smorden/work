@@ -144,12 +144,36 @@ def _print_cdp_help():
 # 页面操作
 # ---------------------------------------------------------------------------
 def is_logged_in(page):
-    """在 /user 页判断是否已登录：能看到「每日签到」按钮即为已登录。"""
+    """判断是否已登录。
+
+    依据（ripro-v2 主题）：
+    - 已登录：导航栏渲染头像下拉框，内有 .user-logout（退出登录）、
+      .mx-display-name（用户名）、.menu-avatar-img —— 只有登录态才有
+    - 未登录：导航栏是「登录」按钮
+    注意不能只认「每日签到」按钮文案：已签到当天文案会变（如「已签到」），
+    /user 页懒加载也会慢，靠它会误判为未登录。
+    """
+    signals = [
+        'a.user-logout',            # 退出登录链接（已登录独有）
+        '.mx-display-name',         # 导航栏用户名
+        '.menu-avatar-img',         # 导航栏头像
+        '.dropdown-item-nicon',     # 用户下拉菜单导航
+        'text=每日签到',             # 保留原信号
+        'text=已签到',               # 当天已签到的情况
+    ]
+    for sel in signals:
+        try:
+            if page.locator(sel).count() > 0:
+                return True
+        except Exception:
+            continue
+    # 二次确认：存在「退出登录」文字也算
     try:
-        cnt = page.locator('text=每日签到').count()
-        return cnt > 0
+        if page.locator('text=退出登录').count() > 0:
+            return True
     except Exception:
-        return False
+        pass
+    return False
 
 
 def fill_login_form(page):
@@ -265,7 +289,7 @@ def click_first_visible(page, selectors, timeout_ms=3000):
         try:
             loc = page.locator(sel)
             n = loc.count()
-            for i in range(min(n, 8)):
+            for i in range(min(n, 20)):
                 el = loc.nth(i)
                 try:
                     if el.is_visible():
@@ -289,6 +313,9 @@ def do_login(page):
     # 所以用 click_first_visible 只点可见的入口。
     print("点击右上角「登录」…")
     entry_selectors = [
+        '.switch-mod-btn[data-mod="login"]',   # ajax 登录插件的标准入口属性
+        'a[data-mod="login"]',
+        '[data-mod="login"]',
         'a:has-text("登录")',
         'button:has-text("登录")',
         'a:has-text("登 录")',
@@ -303,6 +330,24 @@ def do_login(page):
             break
         # 等页面动态渲染完再试一轮
         time.sleep(3)
+    if entry is None:
+        # JS 兜底：直接给 [data-mod="login"] 派发点击事件，触发插件弹窗逻辑
+        try:
+            js_clicked = page.evaluate(
+                "() => {"
+                "  const els = document.querySelectorAll('[data-mod=\"login\"]');"
+                "  for (const el of els) { el.click(); return true; }"
+                "  const a = Array.from(document.querySelectorAll('a,button'))"
+                "    .find(x => x.textContent.trim() === '登录');"
+                "  if (a) { a.click(); return true; }"
+                "  return false;"
+                "}"
+            )
+            if js_clicked:
+                print("  已通过 JS 事件派发触发登录弹窗")
+                entry = "js"
+        except Exception:
+            pass
     if entry is None:
         print("  [错误] 找不到可见的登录入口")
         page.screenshot(path="xydj_login_entry_error.png")
@@ -420,11 +465,36 @@ def ensure_logged_in(page, force_login=False):
     page.goto(USER_URL, timeout=60000)
     time.sleep(2)
 
-    if not force_login and is_logged_in(page):
-        print("  已登录（会话有效），跳过登录，直接签到")
-        return True
-    print("  未登录，开始登录流程 …")
+    # 首查未命中可能是懒加载未渲染完，重查两轮再下结论
+    if not force_login:
+        for _ in range(3):
+            if is_logged_in(page):
+                print("  已登录（会话有效），跳过登录，直接签到")
+                return True
+            time.sleep(2)
+        print("  未登录，开始登录流程 …")
+        return do_login(page)
+    print("  强制重新登录 …")
     return do_login(page)
+
+
+def close_auto_chrome(browser):
+    """优雅关闭自动化 Chrome（Browser.close 走正常退出，Cookie 落盘）。
+
+    任务结束后关闭实例，避免残留进程被 gocron 等调度器弄成僵死状态；
+    会话数据已持久化在 ChromeAuto 目录，下次启动自动恢复登录态。
+    """
+    try:
+        session = browser.new_browser_cdp_session()
+        session.send("Browser.close")
+        time.sleep(2)
+        print("已优雅关闭自动化 Chrome（会话已落盘）")
+        return True
+    except Exception:
+        pass
+    # CDP 关不掉就强杀兜底
+    kill_auto_chrome()
+    return False
 
 
 def main():
@@ -450,6 +520,7 @@ def main():
     with sync_playwright() as p:
         browser = None
         context = None
+        spawned_by_us = False
 
         if args.launch:
             if chrome_running():
@@ -469,6 +540,7 @@ def main():
             )
             page = context.pages[0] if context.pages else context.new_page()
         else:
+            spawned_by_us = False
             browser, port = connect_via_cdp(p, args.port)
             if browser is None and args.spawn:
                 spawn_port = args.port or 9222
@@ -476,6 +548,7 @@ def main():
                 kill_auto_chrome()
                 if spawn_auto_chrome(spawn_port):
                     browser, port = connect_via_cdp(p, spawn_port)
+                    spawned_by_us = True
             if browser is None:
                 _print_cdp_help()
                 return 1
@@ -494,8 +567,14 @@ def main():
                 return 2
             return 0
         finally:
+            # 任务结束收尾：
+            # - 我们 spawn 的实例 → 优雅关闭（避免残留成僵死进程）
+            # - 外部已有实例     → 只断开连接，不动它
             if browser is not None:
-                browser.close()
+                if spawned_by_us:
+                    close_auto_chrome(browser)
+                else:
+                    browser.close()
             elif context is not None:
                 context.close()
 
