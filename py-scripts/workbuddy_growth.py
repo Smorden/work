@@ -409,7 +409,13 @@ def import_cookie_state(context):
 # 通用工具
 # ---------------------------------------------------------------------------
 def dismiss_swal2(page):
-    """关掉所有可见的 SweetAlert2 弹窗（避免拦截后续点击）。"""
+    """关掉所有可见的 SweetAlert2 弹窗（避免拦截后续点击）。
+
+    注意：Escape 兜底只在真正检测到 swal2 容器时才执行。workbuddy 的猫猫旅行
+    弹窗是 gs-travel-* 系列（非 swal2），若无条件按 Escape 会把刚弹出的目标
+    弹窗误关掉，导致后续按钮读不到（count=0）。
+    """
+    had_swal2 = False
     try:
         for _ in range(3):
             closed = page.evaluate(
@@ -429,26 +435,35 @@ def dismiss_swal2(page):
             )
             if closed == 0:
                 break
+            had_swal2 = True
             time.sleep(0.5)
     except Exception:
         pass
-    try:
-        page.keyboard.press("Escape")
-        time.sleep(0.3)
-    except Exception:
-        pass
+    if had_swal2:
+        try:
+            page.keyboard.press("Escape")
+            time.sleep(0.3)
+        except Exception:
+            pass
 
 
-def click_by_class(page, selector, label, timeout=CLICK_TIMEOUT):
-    """按 class 点击按钮，附带 dismiss 弹窗兜底。"""
+def click_by_class(page, selector, label, timeout=CLICK_TIMEOUT, dismiss_first=False):
+    """按 class 点击按钮。
+
+    dismiss_first=True 时先清掉可能残留的 swal2 弹窗——仅用于点击「主按钮」
+    之前。点击弹窗内部按钮（确定派出/领取积分/关闭）时绝不能用 dismiss，
+    否则 Escape 会误关目标弹窗，导致按钮读不到。
+    """
     loc = page.locator(selector).first
+    # locator 是惰性查询：wait_for 会一直等到目标元素真正出现并可见，
+    # 即使该元素是点击后才动态渲染出来的「新弹窗」也能等到。
     loc.wait_for(state="visible", timeout=timeout)
-    dismiss_swal2(page)
+    if dismiss_first:
+        dismiss_swal2(page)
     try:
         loc.click(timeout=timeout, force=True)
     except Exception:
-        # 强制点击失败时降级到 JS 派发
-        dismiss_swal2(page)
+        # 强制点击失败时降级到 JS 派发（不 dismiss，避免误关弹窗）
         page.evaluate(
             f"() => {{ const e = document.querySelector({selector!r}); if (e) e.click(); }}"
         )
@@ -459,10 +474,11 @@ def click_by_class(page, selector, label, timeout=CLICK_TIMEOUT):
 # 场景判定与执行
 # ---------------------------------------------------------------------------
 def get_travel_state(page):
-    """读 button.gs-buddy-travel 文本判断场景。
+    """读 button.gs-buddy-travel 文本 + disabled 状态判断场景。
 
     返回值：
-        "send"      派猫猫旅行
+        "send"      派猫猫旅行（可派，按钮 enabled）
+        "rested"    猫猫累了（按钮 disabled，今天已派过，等价倒计时）
         "countdown" 旅行倒计时 ...
         "claim"     领取礼物
         None        找不到按钮（页面未加载/未登录）
@@ -472,15 +488,22 @@ def get_travel_state(page):
         loc = page.locator('button.gs-buddy-travel')
         if loc.count() == 0:
             return None
-        text = (loc.first.inner_text() or "").strip()
+        btn = loc.first
+        text = (btn.inner_text() or "").strip()
     except Exception:
         return None
-    if "派猫猫旅行" in text:
-        return "send"
     if "旅行倒计时" in text:
         return "countdown"
     if "领取礼物" in text:
         return "claim"
+    if "派猫猫旅行" in text:
+        # 猫猫累了：按钮 disabled（hover 显示「累啦，明天再来吧」tooltip）
+        try:
+            if btn.get_attribute("disabled") is not None:
+                return "rested"
+        except Exception:
+            pass
+        return "send"
     return f"unknown:{text}"
 
 
@@ -497,7 +520,7 @@ def wait_state(page, state, timeout=WAIT_STATE_TIMEOUT):
 def do_send(page):
     """场景1: 派猫猫旅行。"""
     print("== 场景1: 派猫猫旅行 ==")
-    click_by_class(page, "button.gs-buddy-travel", "派猫猫旅行")
+    click_by_class(page, "button.gs-buddy-travel", "派猫猫旅行", dismiss_first=True)
     time.sleep(0.8)
     click_by_class(page, "button.gs-travel-primary-btn", "确定派出")
     time.sleep(1)
@@ -512,9 +535,9 @@ def do_send(page):
 def do_claim(page):
     """场景3: 领取礼物 → 等按钮变「派猫猫旅行」→ 走场景1。"""
     print("== 场景3: 领取礼物 ==")
-    click_by_class(page, "button.gs-buddy-travel", "领取礼物")
+    click_by_class(page, "button.gs-buddy-travel", "领取礼物", dismiss_first=True)
     time.sleep(0.8)
-    click_by_class(page, "button.gs-travel-claim-btn", "领取 10 积分")
+    click_by_class(page, "button.gs-travel-claim-btn", "领取积分")
     time.sleep(1)
     try:
         click_by_class(page, "button.gs-travel-letter-close", "关闭领积分弹窗")
@@ -646,6 +669,8 @@ def main():
                 do_send(page)
             elif state == "countdown":
                 print("  猫猫正在旅行，无需操作 [OK]")
+            elif state == "rested":
+                print("  猫猫累了，今天已派过，无需操作 [OK]")
             elif state == "claim":
                 do_claim(page)
             elif state.startswith("unknown:"):
