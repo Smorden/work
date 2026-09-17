@@ -17,9 +17,9 @@ select    a.sku, sku_name sku名称
                , supplier_name 供应商
                , theoretical_purchase_price as `含运采购价(无税)`
   -- , theoretical_purchase_price_with_tax as `含运采购价(含税)`
-               , factory_theoretical_purchase_price as `不含运采购价(无税)`
+               -- , factory_theoretical_purchase_price as `不含运采购价(无税)`
   -- , factory_theoretical_purchase_price_with_tax as `不含运采购价(含税)`
-               , if(default_supplier_flag=1,'是','否') 是否默认供应商
+               -- , if(default_supplier_flag=1,'是','否') 是否默认供应商
 from
     (
         select
@@ -34,11 +34,12 @@ from
         where
               dt = date_sub(curdate(), interval 1 day)
           and enable_status = 1
+          and default_supplier_flag = 1
         ) as a
     join (
         select sku, sku_name
         from dwd.dwd_dim_sku_ds
         where dt = date_sub(curdate(), interval 1 day)
         ) as b on b.sku = a.sku
-order by sku, default_supplier_flag desc
+order by sku
 ;
