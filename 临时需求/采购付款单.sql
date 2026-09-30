@@ -38,15 +38,15 @@ select
         when 2 then '未支付'
         when 3 then '已支付'
         end 支付状态,
-    l.po_order_code as 采购单号,
-    -- cast(l.apply_amount as double) as 申请金额,
-    cast(b.apply_total_amount as double) as 本次申请总金额,
-    sp.supplier_name as 供应商,
     case b.write_off_status
         when 1 then '未核销'
         when 2 then '部分核销'
         when 3 then '已核销'
         end 核销状态,
+    l.po_order_code as 采购单号,
+    -- cast(l.apply_amount as double) as 申请金额,
+    cast(b.apply_total_amount as double) as 本次申请总金额,
+    -- sp.supplier_name as 供应商,
     b.bill_time as 付款申请日期,
     b.submit_to_pay_time as 发起付款时间
 FROM ods.ods_lh_dss_ss_payment_apply_bill_df AS b
@@ -58,5 +58,6 @@ FROM ods.ods_lh_dss_ss_payment_apply_bill_df AS b
 join ods.ods_lh_dsm_ps_supplier_df as sp on sp.id = b.ps_supplier_id
 where org.org_name ='常熟市莫城街道浩兴通百货商行（个体工商户）'
     and b.record_status = 1
+    and sp.supplier_name = '徐州世昌玻璃制品有限公司'
 order by bill_time, bill_code, po_order_code
 ;

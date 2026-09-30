@@ -79,19 +79,37 @@ import os as _os
 USERNAME = _os.environ.get("XDGAME_USER", "dmjj88")
 PASSWORD = _os.environ.get("XDGAME_PASS", "2223141_Xd")
 
-# 优先探测的调试端口
-DEBUG_PORTS = [9222, 9223, 9333, 9229]
+# 清掉代理环境变量：Playwright 的 CDP 连接会读 *_proxy，本机代理软件
+# 劫持 127.0.0.1 回环请求时 connect_over_cdp 会 502 失败
+# （Chrome 自身走系统代理设置，不受此影响）
+for _v in ("http_proxy", "https_proxy", "all_proxy",
+           "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
+    _os.environ.pop(_v, None)
+_os.environ["no_proxy"] = _os.environ["NO_PROXY"] = "127.0.0.1,localhost,::1"
+
+# 各脚本专属端口（只探测自己的，绝不连别人的实例——否则会被对方
+# 任务结束时的关闭逻辑杀掉浏览器，表现为 page.goto TargetClosedError）：
+#   xdgame        = 9222 (ChromeAuto)
+#   xianyudanji   = 9225 (ChromeAutoXY)
+#   xianyupc      = 9223 (ChromeAutoPC)
+#   workbuddy成长 = 9224 (ChromeAutoGC)
+DEBUG_PORTS = [9222]
 
 
 # ---------------------------------------------------------------------------
 # Chrome 连接
 # ---------------------------------------------------------------------------
 def probe_debug_port(port):
-    """探测某调试端口是否可用（返回 True 表示有 Chrome 在监听）。"""
+    """探测某调试端口是否可用（返回 True 表示有 Chrome 在监听）。
+
+    用 ProxyHandler({}) 强制直连：本机代理软件会劫持回环请求，
+    走系统代理探测会 502 / 误判端口不可用。
+    """
     try:
-        urllib.request.urlopen(
-            f"http://127.0.0.1:{port}/json/version", timeout=2
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({})
         )
+        opener.open(f"http://127.0.0.1:{port}/json/version", timeout=2)
         return True
     except Exception:
         return False
@@ -119,10 +137,16 @@ def connect_via_cdp(p, port=0):
 
 
 def kill_auto_chrome():
-    """只杀自动化专用目录（ChromeAuto）的 Chrome 进程，不碰日常 Chrome。"""
+    """只杀本脚本专用目录（ChromeAuto）的 Chrome 进程，不碰日常 Chrome。
+
+    精确匹配 "--user-data-dir=…\\ChromeAuto"（目录名后面必须是空格或
+    命令行结尾），不会误杀 ChromeAutoXY / ChromeAutoPC / ChromeAutoGC
+    等其他签到脚本的实例（旧的 '*ChromeAuto*' 前缀通配会把它们全杀掉）。
+    """
     ps_cmd = (
         "Get-CimInstance Win32_Process -Filter \"name='chrome.exe'\" | "
-        "Where-Object {$_.CommandLine -like '*ChromeAuto*'} | "
+        "Where-Object {$_.CommandLine -match "
+        "'--user-data-dir=\\S+\\\\ChromeAuto(\\s|$)'} | "
         "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
     )
     try:
@@ -131,7 +155,7 @@ def kill_auto_chrome():
             capture_output=True, timeout=15,
         )
         time.sleep(2)
-        print("  已清理僵死的自动化 Chrome 实例")
+        print("  已清理僵死的自动化 Chrome 实例（ChromeAuto）")
     except Exception as e:
         print(f"  [提示] 清理自动化 Chrome 失败（忽略）: {e}")
 
@@ -404,6 +428,32 @@ def do_login(page):
         return True
 
 
+def dismiss_favorite_popup(page, wait_seconds=0):
+    """关掉用户中心的「收藏本站」引导弹窗。
+
+    跳转到用户中心后站点会弹一个收藏引导层（button.mn-confirm「我已收藏」），
+    挡住每日签到标签/按钮。点掉它弹窗才消失，后续点击才能生效。
+    没弹窗时静默跳过（幂等）。
+
+    wait_seconds > 0 时轮询等待弹窗出现（弹窗可能延迟渲染，
+    两次立即检查会漏掉），期间出现即点击。
+    """
+    deadline = time.time() + wait_seconds
+    while True:
+        try:
+            btn = page.locator("button.mn-confirm").first
+            if btn.is_visible(timeout=2500):
+                btn.click(timeout=5000)
+                print("  已关闭「收藏本站」引导弹窗（我已收藏）")
+                time.sleep(1)
+                return True
+        except Exception:
+            pass
+        if time.time() >= deadline:
+            return False
+        time.sleep(1)
+
+
 def ensure_logged_in(page, force_login=False):
     """探测登录态：先访问签到页。
 
@@ -413,6 +463,8 @@ def ensure_logged_in(page, force_login=False):
     print("== 检查登录状态 ==")
     page.goto(SIGNIN_URL, timeout=60000)
     time.sleep(2)
+    # 用户中心可能弹「收藏本站」引导层，挡住签到入口，先关掉
+    dismiss_favorite_popup(page)
 
     if not force_login:
         redirected_to_login = "login" in page.url
@@ -436,6 +488,10 @@ def do_signin(page):
         page.goto(SIGNIN_URL, timeout=60000)
         time.sleep(2)
 
+    # 用户中心可能弹「收藏本站」引导层（登录跳转后新出现），挡住签到标签；
+    # 弹窗可能延迟渲染，轮询等 6s，期间出现即点掉
+    dismiss_favorite_popup(page, wait_seconds=6)
+
     # 先检测是否已签到：已签到时按钮变成 disabled 的「今日已签到」
     try:
         already = page.evaluate(
@@ -453,20 +509,26 @@ def do_signin(page):
         pass
 
     print("点击「立即签到」…")
-    try:
-        btn = page.locator('#signin-button').first
-        btn.wait_for(state="visible", timeout=10000)
-        # 若中途变为 disabled（已签到），直接返回
-        if btn.is_disabled():
-            print("  今日已签到，无需重复签到 ✅")
-            return True
-        btn.scroll_into_view_if_needed()
-        btn.click(timeout=10000)
-        print("  已点击签到按钮")
-    except Exception as e:
-        print(f"  [错误] 签到失败: {e}")
-        page.screenshot(path="signin_error.png")
-        return False
+    for attempt in range(3):
+        try:
+            btn = page.locator('#signin-button').first
+            btn.wait_for(state="visible", timeout=10000)
+            # 若中途变为 disabled（已签到），直接返回
+            if btn.is_disabled():
+                print("  今日已签到，无需重复签到 ✅")
+                return True
+            btn.scroll_into_view_if_needed()
+            btn.click(timeout=10000)
+            print("  已点击签到按钮")
+            break
+        except Exception as e:
+            # 点击可能被延迟出现的弹窗遮罩拦截，关掉再试
+            dismiss_favorite_popup(page)
+            if attempt == 2:
+                print(f"  [错误] 签到失败: {e}")
+                page.screenshot(path="signin_error.png")
+                return False
+            print(f"  第 {attempt + 1} 次点击失败（{e}），已尝试关弹窗，重试 …")
 
     time.sleep(3)
     print("签到完成 ✅")
@@ -496,6 +558,8 @@ def spawn_auto_chrome(port):
     """用独立 user-data-dir 启动带调试端口的 Chrome（无头后台运行），返回是否成功。"""
     import subprocess as sp
     print(f"启动自动化 Chrome 实例（无头后台，独立目录 {AUTO_USER_DATA_DIR}）…")
+    # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP：脱离父进程组，
+    # gocron/终端退出或被强杀时不连带杀掉 Chrome（否则实例半死成僵死状态）
     sp.Popen([
         CHROME_PATH,
         "--headless=new",
@@ -503,7 +567,7 @@ def spawn_auto_chrome(port):
         f"--remote-debugging-port={port}",
         "--window-size=1280,900",
         "about:blank",
-    ])
+    ], creationflags=0x00000008 | 0x00000200)
     # 等端口就绪
     for _ in range(20):
         time.sleep(1)
@@ -512,6 +576,23 @@ def spawn_auto_chrome(port):
             return True
     print("  [错误] Chrome 启动后调试端口未就绪")
     return False
+
+
+def browser_alive(browser):
+    """CDP 连接成功不代表实例可用。
+
+    僵死/正在关闭的实例端口还在监听、connect_over_cdp 也能成功，但
+    浏览器随时消失，表现为 page.goto 抛 TargetClosedError。
+    建临时页做一次 about:blank 导航，验证通道真的活着。
+    """
+    try:
+        ctx = browser.contexts[0]
+        tp = ctx.new_page()
+        tp.goto("about:blank", timeout=8000)
+        tp.close()
+        return True
+    except Exception:
+        return False
 
 
 def close_auto_chrome(browser):
@@ -579,6 +660,14 @@ def main():
         else:
             # ---- 默认：连接正在运行的 Chrome，新建标签页 ----
             browser, port = connect_via_cdp(p, args.port)
+            # 活性验证：连上了但实例僵死/正在关闭 → 忽略它走 spawn 路径
+            if browser is not None and not browser_alive(browser):
+                print("  [提示] 现有实例无响应（僵死或正在关闭），忽略它重新拉起 …")
+                try:
+                    browser.close()   # 仅断开连接，不动浏览器本体
+                except Exception:
+                    pass
+                browser = None
             if browser is None and args.spawn:
                 # 自动拉起独立目录的 Chrome 实例再连
                 spawn_port = args.port or 9222

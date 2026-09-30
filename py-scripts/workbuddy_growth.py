@@ -62,10 +62,14 @@ for _stream in (sys.stdout, sys.stderr):
 # 配置
 # ---------------------------------------------------------------------------
 CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-# 独立于 xianyupc（ChromeAutoPC）、xianyudanji（ChromeAuto）的自动化 Chrome
+# 独立于 xianyupc（ChromeAutoPC）、xianyudanji（ChromeAutoXY）的自动化 Chrome
 AUTO_USER_DATA_DIR = r"C:\Users\Mickey.Deng\AppData\Local\ChromeAutoGC"
 DEFAULT_PORT = 9224
-DEBUG_PORTS = [9224, 9222, 9223, 9333, 9229]
+# 本脚本专属端口（只探测自己的，绝不连别的脚本的实例——否则会被对方
+# 任务结束时的关闭逻辑杀掉浏览器）：
+#   xdgame=9222(ChromeAuto) xianyudanji=9225(ChromeAutoXY)
+#   xianyupc=9223(ChromeAutoPC) workbuddy成长=9224(ChromeAutoGC)
+DEBUG_PORTS = [9224]
 
 GROWTH_URL = "https://www.workbuddy.cn/profile/growth-center?utm_medium=cpc&utm_id=gwzcw.15291244.15291244.15291244"
 

@@ -48,7 +48,10 @@ for _stream in (sys.stdout, sys.stderr):
 CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 USER_DATA_DIR = r"C:\Users\Mickey.Deng\AppData\Local\Google\Chrome\User Data"
 PROFILE = "Default"
-AUTO_USER_DATA_DIR = r"C:\Users\Mickey.Deng\AppData\Local\ChromeAuto"
+# 独立于 xdgame 的 ChromeAuto：两站任务 gocron 并行调度时会互踩
+# （共用目录+端口 → 一个任务收尾关浏览器，另一个正在用的实例直接被杀，
+#  表现为 page.goto TargetClosedError），目录和端口都分开
+AUTO_USER_DATA_DIR = r"C:\Users\Mickey.Deng\AppData\Local\ChromeAutoXY"
 
 BASE_URL = "https://www.xianyudanji.gg/"
 HOME_URL = BASE_URL
@@ -58,17 +61,30 @@ import os as _os
 USERNAME = _os.environ.get("XYDJ_USER", "dmjj88")
 PASSWORD = _os.environ.get("XYDJ_PASS", "2223141_Xy")
 
-DEBUG_PORTS = [9222, 9223, 9333, 9229]
+# 清掉代理环境变量：Playwright 的 CDP 连接会读 *_proxy，本机代理软件
+# 劫持 127.0.0.1 回环请求时 connect_over_cdp 会 502 失败
+for _v in ("http_proxy", "https_proxy", "all_proxy",
+           "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
+    _os.environ.pop(_v, None)
+_os.environ["no_proxy"] = _os.environ["NO_PROXY"] = "127.0.0.1,localhost,::1"
+
+# 本脚本专属端口（只探测自己的，绝不连别的脚本的实例）：
+#   xdgame=9222(ChromeAuto) xianyudanji=9225(ChromeAutoXY)
+#   xianyupc=9223(ChromeAutoPC) workbuddy成长=9224(ChromeAutoGC)
+DEBUG_PORTS = [9225]
 
 
 # ---------------------------------------------------------------------------
 # Chrome 连接
 # ---------------------------------------------------------------------------
 def probe_debug_port(port):
+    """探测调试端口是否可用。ProxyHandler({}) 强制直连，
+    避免本机代理劫持回环请求导致 502/误判。"""
     try:
-        urllib.request.urlopen(
-            f"http://127.0.0.1:{port}/json/version", timeout=2
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({})
         )
+        opener.open(f"http://127.0.0.1:{port}/json/version", timeout=2)
         return True
     except Exception:
         return False
@@ -95,10 +111,16 @@ def connect_via_cdp(p, port=0):
 
 
 def kill_auto_chrome():
-    """只杀自动化专用目录（ChromeAuto）的 Chrome 进程，不碰日常 Chrome。"""
+    """只杀本脚本专用目录（ChromeAutoXY）的 Chrome 进程。
+
+    精确匹配 "--user-data-dir=…\\ChromeAutoXY"（目录名后必须是空格或结尾），
+    不会误杀 xdgame 的 ChromeAuto、xianyupc 的 ChromeAutoPC、
+    workbuddy 的 ChromeAutoGC 以及日常 Chrome。
+    """
     ps_cmd = (
         "Get-CimInstance Win32_Process -Filter \"name='chrome.exe'\" | "
-        "Where-Object {$_.CommandLine -like '*ChromeAuto*'} | "
+        "Where-Object {$_.CommandLine -match "
+        "'--user-data-dir=\\S+\\\\ChromeAutoXY(\\s|$)'} | "
         "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
     )
     try:
@@ -107,7 +129,7 @@ def kill_auto_chrome():
             capture_output=True, timeout=15,
         )
         time.sleep(2)
-        print("  已清理僵死的自动化 Chrome 实例")
+        print("  已清理僵死的自动化 Chrome 实例（ChromeAutoXY）")
     except Exception as e:
         print(f"  [提示] 清理自动化 Chrome 失败（忽略）: {e}")
 
@@ -116,6 +138,8 @@ def spawn_auto_chrome(port):
     """用独立 user-data-dir 启动带调试端口的 Chrome（无头后台运行）。"""
     import subprocess as sp
     print(f"启动自动化 Chrome 实例（无头后台，独立目录 {AUTO_USER_DATA_DIR}）…")
+    # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP：脱离父进程组，
+    # gocron/终端退出或被强杀时不连带杀掉 Chrome
     sp.Popen([
         CHROME_PATH,
         "--headless=new",
@@ -123,7 +147,7 @@ def spawn_auto_chrome(port):
         f"--remote-debugging-port={port}",
         "--window-size=1280,900",
         "about:blank",
-    ])
+    ], creationflags=0x00000008 | 0x00000200)
     for _ in range(20):
         time.sleep(1)
         if probe_debug_port(port):
@@ -131,6 +155,23 @@ def spawn_auto_chrome(port):
             return True
     print("  [错误] Chrome 启动后调试端口未就绪")
     return False
+
+
+def browser_alive(browser):
+    """CDP 连接成功不代表实例可用。
+
+    僵死/正在关闭的实例端口还在监听、connect_over_cdp 也能成功，但
+    浏览器随时消失，表现为 page.goto 抛 TargetClosedError。
+    建临时页做一次 about:blank 导航，验证通道真的活着。
+    """
+    try:
+        ctx = browser.contexts[0]
+        tp = ctx.new_page()
+        tp.goto("about:blank", timeout=8000)
+        tp.close()
+        return True
+    except Exception:
+        return False
 
 
 def _print_cdp_help():
@@ -542,8 +583,16 @@ def main():
         else:
             spawned_by_us = False
             browser, port = connect_via_cdp(p, args.port)
+            # 活性验证：连上了但实例僵死/正在关闭 → 忽略它走 spawn 路径
+            if browser is not None and not browser_alive(browser):
+                print("  [提示] 现有实例无响应（僵死或正在关闭），忽略它重新拉起 …")
+                try:
+                    browser.close()   # 仅断开连接，不动浏览器本体
+                except Exception:
+                    pass
+                browser = None
             if browser is None and args.spawn:
-                spawn_port = args.port or 9222
+                spawn_port = args.port or 9225
                 # 连不上可能是旧实例僵死（端口在听但 CDP 无响应），先清理再拉新的
                 kill_auto_chrome()
                 if spawn_auto_chrome(spawn_port):
