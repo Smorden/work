@@ -27,7 +27,7 @@ select
 	, sum(ts.before_qty) as si数量
 	, sum(ts.box_volume )/1000000.0 as 体积m3
 	, sum(ts.box_weight) as 重量kg
-	, sum(ts.before_qty * po.purchase_price) as  含运采购金额
+	-- , sum(ts.before_qty * po.purchase_price) as  含运采购金额
 	, max(if(dp.sku is null, '是', '否')) as 是否异常
 	, sum(ifnull(dp.supplier_delivery_price, 0) * ts.before_qty) as 自发运费
 	, max(if(po.order_label = 1, '是', '否')) as 是否异地整柜
