@@ -83,3 +83,23 @@ FROM
 join (select distinct sku from dwd.dwd_dim_sku_tag_df where tag_name = '新品测款') as tg on tg.sku = aa.sku
 where aa.po_order_date = '2026-07-06'
 ;
+-- 简单信息
+select po_order_code as 采购单号
+  ,ps_supplier_name as 供应商名称
+  ,CASE po_order_status
+       WHEN 10 THEN '待供应商确认'
+       WHEN 20 THEN '待交货'
+       WHEN 30 THEN '供应商拒绝'
+       WHEN 40 THEN '变更审核中'
+       WHEN 50 THEN '交货中'
+       WHEN 60 THEN '全部交货'
+       WHEN 70 THEN '已关闭'
+       WHEN 80 THEN '已完成'
+       WHEN 90 THEN '部分确认'
+       ELSE ''
+       END AS 订单状态
+  ,sku as SKU编码,purchase_qty as 采购数量,purchase_price `单价(无税)`,line_total_amount `金额(无税)小计`
+from dwd.dwd_fact_pcct_purchase_order_line_df
+where purchase_subject_name = '常熟市莫城街道浩芸通百货商行（个体工商户）'
+order by po_order_date, po_order_code
+;
