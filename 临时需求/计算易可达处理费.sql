@@ -217,6 +217,12 @@ from transaction_bill as tb
 order by tb.calc_bill_time, tb.bill_generated_time, tb.parcel_id
     ;
 select *
+    from temp.temp_dwd_dim_tcct_ykd_handing_fee_df
+where dt = '2026-04-01' and country = '德国'
+;
+select * from temp.temp_dwd_dim_tcct_zj_handing_fee_df;
+;
+select *
 from dwd.dwd_dim_tcct_ykd_product_info_ds
 where dt = '2026-06-23'
 and goods_code = 'OTJSHHUAJIA002'

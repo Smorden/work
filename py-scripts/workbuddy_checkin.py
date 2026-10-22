@@ -16,6 +16,12 @@ WorkBuddy 客户端「Buddy加油站」每日签到脚本
 
 依赖：仅 Python 3 标准库，无需 pip 安装任何第三方包。
 
+兼容性说明（2026-10 客户端升级后）：
+    新版 workbuddy-desktop.info 把 accessToken/refreshToken 改成了信封加密对象
+    {"$wbEncrypted": 1, "envelope": "..."}，无法直接当 Bearer token 使用。
+    脚本会自动在同目录的明文兼容文件 Tencent-Cloud.coding-copilot.info 中
+    找到同一账号的可用 token（该文件由客户端维护、有效期通常数月）。
+
 用法：
     python workbuddy_checkin.py            # 查状态，未签到则签到
     python workbuddy_checkin.py --status   # 仅查询签到状态，不签到
@@ -51,9 +57,30 @@ CHECKIN_PATH = "/v2/billing/meter/daily-checkin"
 REFRESH_PATH = "/v2/auth/token/refresh"
 TIMEOUT_SECONDS = 20
 
-# 会话文件的相对路径（相对 AppData\Local）
-AUTH_REL_PATH = os.path.join("CodeBuddyExtension", "Data", "Public", "auth",
-                             "workbuddy-desktop.info")
+# 会话文件候选（相对 AppData\Local，按优先级）。
+# workbuddy-desktop.info：新版客户端主文件，但 token 字段已信封加密
+# Tencent-Cloud.coding-copilot.info：老格式明文文件，token 可直接使用
+AUTH_FILE_NAMES = (
+    "workbuddy-desktop.info",
+    "Tencent-Cloud.coding-copilot.info",
+)
+
+# 加密字段标记：值为 dict 且含 $wbEncrypted 时说明是信封密文，无法直接用
+ENCRYPTED_MARKER = "$wbEncrypted"
+
+
+def is_encrypted(value):
+    """判断字段是否为信封加密对象。"""
+    return isinstance(value, dict) and ENCRYPTED_MARKER in value
+
+
+def plain_str(value):
+    """只有非空字符串才当作文本凭据返回，否则返回空串。
+
+    客户端升级后 accessToken 可能是 {"$wbEncrypted":1,"envelope":"..."}
+    这种 dict，直接拿去拼 "Bearer " + token 会抛 TypeError。
+    """
+    return value if isinstance(value, str) and value.strip() else ""
 
 
 def _candidate_bases():
@@ -84,12 +111,16 @@ def collect_auth_candidates():
     """收集所有可能的会话文件路径（含通配兜底），去重保序。"""
     cands = []
     for base in _candidate_bases():
-        cands.append(os.path.join(base, AUTH_REL_PATH))
+        for name in AUTH_FILE_NAMES:
+            cands.append(os.path.join(base, "CodeBuddyExtension", "Data",
+                                       "Public", "auth", name))
     # 通配兜底：扫描所有盘符的 C:\Users\*\AppData\Local\...
     for drive in ("C:", "D:"):
-        pattern = os.path.join(drive, os.sep, "Users", "*", "AppData",
-                               "Local", AUTH_REL_PATH)
-        cands.extend(sorted(glob.glob(pattern)))
+        for name in AUTH_FILE_NAMES:
+            pattern = os.path.join(drive, os.sep, "Users", "*", "AppData",
+                                   "Local", "CodeBuddyExtension", "Data",
+                                   "Public", "auth", name)
+            cands.extend(sorted(glob.glob(pattern)))
     out = []
     for p in cands:
         if p and p not in out:
@@ -102,20 +133,23 @@ def _http_post(path, token, uid, domain, body=None, extra_headers=None):
     url = API_BASE + path
     data = json.dumps(body if body is not None else {}).encode("utf-8")
     headers = {
-        "Authorization": "Bearer " + token,
-        "X-User-Id": uid,
+        # plain_str 兜底：客户端字段若被改成加密 dict，这里不会抛 TypeError
+        "Authorization": "Bearer " + plain_str(token),
+        "X-User-Id": plain_str(uid),
         "Content-Type": "application/json",
         "Accept": "application/json",
         "User-Agent": "WorkBuddy-Checkin/1.0",
     }
     if domain:
-        headers["X-Domain"] = domain
+        headers["X-Domain"] = plain_str(domain)
     if extra_headers:
         headers.update(extra_headers)
 
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+    # 空代理 opener：本机代理软件会劫持回环/直连请求，走系统代理会 502
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS) as resp:
+        with opener.open(req, timeout=TIMEOUT_SECONDS) as resp:
             return resp.status, json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         try:
@@ -141,19 +175,51 @@ def save_session(auth_path, session):
 
 
 def find_auth_path(explicit=None):
+    """选出一个可用的会话文件（明文 token），返回其路径。
+
+    客户端新版主文件 token 已信封加密（无法直接使用），会自动跳到
+    同目录的明文兼容文件；显式 --auth 指定时优先按该路径尝试。
+    """
     if explicit:
-        if os.path.exists(explicit):
+        if not os.path.exists(explicit):
+            raise SystemExit(f"[错误] 指定的会话文件不存在: {explicit}")
+        try:
+            with open(explicit, "r", encoding="utf-8") as f:
+                probe = json.load(f)
+            if plain_str(probe.get("auth", {}).get("accessToken")):
+                return explicit
+            encrypted_explicit = explicit
+        except Exception:
             return explicit
-        raise SystemExit(f"[错误] 指定的会话文件不存在: {explicit}")
+    else:
+        encrypted_explicit = None
+
+    encrypted_seen = []
     for p in collect_auth_candidates():
-        if os.path.exists(p):
+        if not os.path.exists(p):
+            continue
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            continue
+        if plain_str(data.get("auth", {}).get("accessToken")):
             return p
-    print("[错误] 未找到 WorkBuddy 会话文件。已按以下路径探测（均不存在）：")
+        if is_encrypted(data.get("auth", {}).get("accessToken")):
+            encrypted_seen.append(p)
+
+    # 没有明文 token：报清楚原因
+    print("[错误] 未找到含明文 accessToken 的会话文件。")
+    for p in encrypted_seen:
+        print(f"  - {p}  （accessToken 为信封加密对象 $wbEncrypted，无法直接使用）")
+    if encrypted_explicit:
+        print(f"  - {encrypted_explicit}  （--auth 指定，同样是加密格式）")
+    print("已扫描路径：")
     for p in collect_auth_candidates():
         print("  - " + p)
     raise SystemExit(
-        "请确认已登录客户端，或用 --auth <path> 手动指定路径。\n"
-        "会话文件通常位于: %LOCALAPPDATA%\\CodeBuddyExtension\\Data\\Public\\auth\\workbuddy-desktop.info"
+        "请确认客户端已登录；若所有文件都已加密，请在客户端重新登录一次\n"
+        "（明文兼容文件通常由客户端自动维护并保留数月有效期）。"
     )
 
 
@@ -168,16 +234,17 @@ def token_expired(session):
 def refresh_token(session, auth_path, persist):
     """用 refreshToken 换新令牌；成功则写回（可选）。返回新的 session。"""
     auth = session.get("auth", {})
-    refresh_token = auth.get("refreshToken")
+    refresh_token = plain_str(auth.get("refreshToken"))
     if not refresh_token:
-        raise SystemExit("[错误] accessToken 已过期且缺少 refreshToken，请重新登录客户端。")
+        raise SystemExit("[错误] accessToken 已过期且缺少明文 refreshToken，"
+                         "请重新登录客户端。")
 
-    uid = session.get("account", {}).get("uid", "")
-    domain = auth.get("domain", "")
+    uid = plain_str(session.get("account", {}).get("uid"))
+    domain = plain_str(auth.get("domain"))
     print("accessToken 已过期，尝试刷新令牌 …")
     status, body = _http_post(
         REFRESH_PATH,
-        auth.get("accessToken", ""),
+        plain_str(auth.get("accessToken")),
         uid,
         domain,
         body={},
@@ -209,10 +276,10 @@ def do_checkin(args):
 
     account = session.get("account", {})
     auth = session.get("auth", {})
-    token = auth.get("accessToken", "")
-    uid = account.get("uid", "")
-    domain = auth.get("domain", "")
-    nickname = account.get("nickname", "")
+    token = plain_str(auth.get("accessToken"))
+    uid = plain_str(account.get("uid"))
+    domain = plain_str(auth.get("domain"))
+    nickname = plain_str(account.get("nickname"))
 
     if not token or not uid:
         raise SystemExit("[错误] 会话文件缺少 accessToken/uid，请确认已登录客户端。")
