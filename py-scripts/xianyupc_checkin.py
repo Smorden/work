@@ -9,13 +9,13 @@
     3. 直连慢，走 HTTP 代理 127.0.0.1:1080（Chrome 启动参数 --proxy-server）
 
 流程：
-    1. 自动启动无头 Chrome（--spawn，带代理，独立目录 ChromeAutoPC / 端口 9223）
+    1. 自动启动无头夸克（--spawn，带代理，独立目录 QuarkAutoPC / 端口 9223）
     2. 先访问 /user 探测登录态（多信号：user-logout / 头像 / 用户名）
     3. 未登录 → 回首页点右上角「登录」→ 浮层填账号密码 → 点「立即登录」
     4. 在 /user 页点击「每日签到」（已签到幂等）
 
 用法：
-    python xianyupc_checkin.py --spawn       # 自动启动带代理的无头 Chrome 并签到（推荐）
+    python xianyupc_checkin.py --spawn       # 自动启动带代理的无头夸克 并签到（推荐）
     python xianyupc_checkin.py               # 连接已开的调试 Chrome（需自行带代理启动）
     python xianyupc_checkin.py --force-login # 强制重新登录
     python xianyupc_checkin.py --port 9223   # 指定调试端口
@@ -42,15 +42,15 @@ for _stream in (sys.stdout, sys.stderr):
 # ---------------------------------------------------------------------------
 # 配置
 # ---------------------------------------------------------------------------
-CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+CHROME_PATH = r"D:\Program Files\Quark\quark.exe"
 # 独立于 xianyudanji 的 ChromeAuto：两站签到任务可能同时/先后跑，
 # 数据目录和端口都分开，互不干扰
-AUTO_USER_DATA_DIR = r"C:\Users\Mickey.Deng\AppData\Local\ChromeAutoPC"
+AUTO_USER_DATA_DIR = r"C:\Users\Mickey.Deng\AppData\Local\QuarkAutoPC"
 DEFAULT_PORT = 9223
 # 本脚本专属端口（只探测自己的，绝不连别的脚本的实例——否则会被对方
 # 任务结束时的关闭逻辑杀掉浏览器，表现为 page.goto TargetClosedError）：
 #   xdgame=9222(ChromeAuto) xianyudanji=9225(ChromeAutoXY)
-#   xianyupc=9223(ChromeAutoPC) workbuddy成长=9224(ChromeAutoGC)
+#   xianyupc=9223(QuarkAutoPC) workbuddy成长=9224(ChromeAutoGC)
 DEBUG_PORTS = [9223]
 
 BASE_URL = "https://www.xianyupc.com/"
@@ -105,7 +105,7 @@ def connect_via_cdp(p, port=0):
             browser = p.chromium.connect_over_cdp(
                 f"http://127.0.0.1:{pt}", timeout=10000
             )
-            print(f"已连接现有 Chrome（127.0.0.1:{pt}），将新建标签页 …")
+            print(f"已连接现有夸克（127.0.0.1:{pt}），将新建标签页 …")
             return browser, pt
         except Exception as e:
             print(f"  [提示] 连接 127.0.0.1:{pt} 失败: {e}")
@@ -114,13 +114,13 @@ def connect_via_cdp(p, port=0):
 
 
 def kill_auto_chrome():
-    """只杀本脚本专用目录（ChromeAutoPC）的 Chrome 进程。
+    """只杀本脚本专用目录（QuarkAutoPC）的夸克进程。
 
-    精确匹配 ChromeAutoPC，不会误杀 xianyudanji 的 ChromeAuto 实例和日常 Chrome。
+    精确匹配 QuarkAutoPC，不会误杀 xianyudanji 的 QuarkAuto 实例和日常夸克。
     """
     ps_cmd = (
-        "Get-CimInstance Win32_Process -Filter \"name='chrome.exe'\" | "
-        "Where-Object {$_.CommandLine -like '*ChromeAutoPC*'} | "
+        "Get-CimInstance Win32_Process -Filter \"name='quark.exe'\" | "
+        "Where-Object {$_.CommandLine -like '*QuarkAutoPC*'} | "
         "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
     )
     try:
@@ -129,15 +129,15 @@ def kill_auto_chrome():
             capture_output=True, timeout=15,
         )
         time.sleep(2)
-        print("  已清理僵死的自动化 Chrome 实例（ChromeAutoPC）")
+        print("  已清理僵死的自动化夸克实例（QuarkAutoPC）")
     except Exception as e:
-        print(f"  [提示] 清理自动化 Chrome 失败（忽略）: {e}")
+        print(f"  [提示] 清理自动化夸克失败（忽略）: {e}")
 
 
 def spawn_auto_chrome(port):
-    """启动带代理 + 调试端口的无头 Chrome（独立目录 ChromeAutoPC）。"""
+    """启动带代理 + 调试端口的无头夸克（独立目录 QuarkAutoPC）。"""
     import subprocess as sp
-    print(f"启动自动化 Chrome（无头 + 代理 {PROXY}，目录 {AUTO_USER_DATA_DIR}）…")
+    print(f"启动自动化夸克（无头 + 代理 {PROXY}，目录 {AUTO_USER_DATA_DIR}）…")
     # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP：脱离父进程组，
     # gocron/终端退出或被强杀时不连带杀掉 Chrome
     sp.Popen([
@@ -162,8 +162,8 @@ def spawn_auto_chrome(port):
 
 def _print_cdp_help():
     print()
-    print("[无法连接现有 Chrome] 没有发现开了调试端口的 Chrome 实例。")
-    print("直接运行 python xianyupc_checkin.py --spawn 即可自动拉起带代理的无头 Chrome。")
+    print("[无法连接现有夸克] 没有发现开了调试端口的 夸克实例。")
+    print("直接运行 python xianyupc_checkin.py --spawn 即可自动拉起带代理的无头夸克。")
     print()
 
 
@@ -504,7 +504,7 @@ def close_auto_chrome(browser):
         session = browser.new_browser_cdp_session()
         session.send("Browser.close")
         time.sleep(2)
-        print("已优雅关闭自动化 Chrome（会话已落盘）")
+        print("已优雅关闭自动化夸克（会话已落盘）")
         return True
     except Exception:
         pass
@@ -536,7 +536,7 @@ def main():
     ap.add_argument("--force-login", action="store_true",
                     help="强制重新登录（默认自动探测：已登录就直接签到）")
     ap.add_argument("--spawn", action="store_true",
-                    help="连不上时，自动用独立数据目录启动带代理的无头 Chrome 再连接")
+                    help="连不上时，自动用独立数据目录启动带代理的无头夸克 再连接")
     ap.add_argument("--port", type=int, default=0,
                     help=f"指定调试端口（默认优先 {DEFAULT_PORT}）")
     args = ap.parse_args()

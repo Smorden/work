@@ -17,17 +17,17 @@ xdgame.com 每日签到脚本（Playwright + Chrome）
 
 前置条件（一次性设置，二选一）：
     方式 A（推荐）：python xdgame_checkin.py --spawn
-    脚本自动用独立目录（C:\\Users\\Mickey.Deng\\AppData\\Local\\ChromeAuto）
-    启动无头（后台、不弹窗）Chrome 实例并连接，不影响你日常的 Chrome；
+    脚本自动用独立目录（C:\\Users\\Mickey.Deng\\AppData\\Local\\QuarkAuto）
+    启动无头（后台、不弹窗）夸克实例并连接，不影响你日常的 Chrome；
     账号密码由脚本直接填充，无需在独立 profile 装 LastPass。
 
     方式 B：手动保持一个带调试端口的 Chrome 开着，脚本直接连。
 
-    注意：Chrome 129+ 在默认 User Data 目录下会静默忽略
+    注意：夸克 136+ 在默认 User Data 目录下会静默忽略
     --remote-debugging-port（安全限制），所以「改日常 Chrome 快捷方式加参数」无效。
 
 用法：
-    python xdgame_checkin.py --spawn          # 自动启动独立 Chrome 并登录+签到（推荐）
+    python xdgame_checkin.py --spawn          # 自动启动独立夸克 并登录+签到（推荐）
     python xdgame_checkin.py                  # 连接已开的调试 Chrome（登录+签到）
     python xdgame_checkin.py --skip-login     # 已登录过，直接签到
     python xdgame_checkin.py --port 9223     # 指定调试端口
@@ -61,13 +61,13 @@ for _stream in (sys.stdout, sys.stderr):
 # ---------------------------------------------------------------------------
 # 配置
 # ---------------------------------------------------------------------------
-CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+CHROME_PATH = r"D:\Program Files\Quark\quark.exe"
 USER_DATA_DIR = r"C:\Users\Mickey.Deng\AppData\Local\Google\Chrome\User Data"
 PROFILE = "Default"
 
-# 专用自动化数据目录（Chrome 129+ 在默认目录下会忽略 --remote-debugging-port，
+# 专用自动化数据目录（夸克 136+ 在默认目录下会忽略 --remote-debugging-port，
 # 因此调试端口只能搭配独立 user-data-dir 使用）
-AUTO_USER_DATA_DIR = r"C:\Users\Mickey.Deng\AppData\Local\ChromeAuto"
+AUTO_USER_DATA_DIR = r"C:\Users\Mickey.Deng\AppData\Local\QuarkAuto"
 
 LOGIN_URL = "https://xdgame.com/user/login.php?gourl=%2Fuser%2Fsignin.php"
 SIGNIN_URL = "https://xdgame.com/user/signin.php"
@@ -89,10 +89,10 @@ _os.environ["no_proxy"] = _os.environ["NO_PROXY"] = "127.0.0.1,localhost,::1"
 
 # 各脚本专属端口（只探测自己的，绝不连别人的实例——否则会被对方
 # 任务结束时的关闭逻辑杀掉浏览器，表现为 page.goto TargetClosedError）：
-#   xdgame        = 9222 (ChromeAuto)
-#   xianyudanji   = 9225 (ChromeAutoXY)
-#   xianyupc      = 9223 (ChromeAutoPC)
-#   workbuddy成长 = 9224 (ChromeAutoGC)
+#   xdgame        = 9222 (QuarkAuto)
+#   xianyudanji   = 9225 (QuarkAutoXY)
+#   xianyupc      = 9223 (QuarkAutoPC)
+#   workbuddy成长 = 9224 (QuarkAutoGC)
 DEBUG_PORTS = [9222]
 
 
@@ -128,7 +128,7 @@ def connect_via_cdp(p, port=0):
             browser = p.chromium.connect_over_cdp(
                 f"http://127.0.0.1:{pt}", timeout=10000
             )
-            print(f"已连接现有 Chrome（127.0.0.1:{pt}），将新建标签页 …")
+            print(f"已连接现有夸克（127.0.0.1:{pt}），将新建标签页 …")
             return browser, pt
         except Exception as e:
             print(f"  [提示] 连接 127.0.0.1:{pt} 失败: {e}")
@@ -137,16 +137,16 @@ def connect_via_cdp(p, port=0):
 
 
 def kill_auto_chrome():
-    """只杀本脚本专用目录（ChromeAuto）的 Chrome 进程，不碰日常 Chrome。
+    """只杀本脚本专用目录（QuarkAuto）的 Chrome 进程，不碰日常夸克。
 
-    精确匹配 "--user-data-dir=…\\ChromeAuto"（目录名后面必须是空格或
-    命令行结尾），不会误杀 ChromeAutoXY / ChromeAutoPC / ChromeAutoGC
-    等其他签到脚本的实例（旧的 '*ChromeAuto*' 前缀通配会把它们全杀掉）。
+    精确匹配 "--user-data-dir=…\\QuarkAuto"（目录名后面必须是空格或
+    命令行结尾），不会误杀 QuarkAutoXY / QuarkAutoPC / QuarkAutoGC
+    等其他签到脚本的实例（旧的 '*QuarkAuto*' 前缀通配会把它们全杀掉）。
     """
     ps_cmd = (
-        "Get-CimInstance Win32_Process -Filter \"name='chrome.exe'\" | "
+        "Get-CimInstance Win32_Process -Filter \"name='quark.exe'\" | "
         "Where-Object {$_.CommandLine -match "
-        "'--user-data-dir=\\S+\\\\ChromeAuto(\\s|$)'} | "
+        "'--user-data-dir=\\S+\\\\QuarkAuto(\\s|$)'} | "
         "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
     )
     try:
@@ -155,25 +155,25 @@ def kill_auto_chrome():
             capture_output=True, timeout=15,
         )
         time.sleep(2)
-        print("  已清理僵死的自动化 Chrome 实例（ChromeAuto）")
+        print("  已清理僵死的自动化夸克实例（QuarkAuto）")
     except Exception as e:
-        print(f"  [提示] 清理自动化 Chrome 失败（忽略）: {e}")
+        print(f"  [提示] 清理自动化夸克失败（忽略）: {e}")
 
 
 def chrome_running():
     """检测是否有 Chrome 主进程在运行。"""
     try:
         out = subprocess.run(
-            ["tasklist", "/FI", "IMAGENAME eq chrome.exe", "/NH"],
+            ["tasklist", "/FI", "IMAGENAME eq quark.exe", "/NH"],
             capture_output=True, text=True, timeout=10,
         ).stdout
-        return "chrome.exe" in out
+        return "quark.exe" in out
     except Exception:
         return False
 
 
 def kill_chrome():
-    subprocess.run(["taskkill", "/F", "/IM", "chrome.exe"],
+    subprocess.run(["taskkill", "/F", "/IM", "quark.exe"],
                    capture_output=True, check=False)
     time.sleep(3)
 
@@ -537,9 +537,9 @@ def do_signin(page):
 
 def _print_cdp_help():
     print()
-    print("[无法连接现有 Chrome] 没有发现开了调试端口的 Chrome 实例。")
+    print("[无法连接现有夸克] 没有发现开了调试端口的 夸克实例。")
     print()
-    print("注意：Chrome 129+ 在默认 User Data 目录下会静默忽略 --remote-debugging-port，")
+    print("注意：夸克 136+ 在默认 User Data 目录下会静默忽略 --remote-debugging-port，")
     print("所以不能用普通快捷方式加参数的方式。需要用独立的自动化数据目录：")
     print()
     print('  一次性初始化（手动跑一次，在里面装好 LastPass / 登录一次 xdgame）：')
@@ -557,7 +557,7 @@ def _print_cdp_help():
 def spawn_auto_chrome(port):
     """用独立 user-data-dir 启动带调试端口的 Chrome（无头后台运行），返回是否成功。"""
     import subprocess as sp
-    print(f"启动自动化 Chrome 实例（无头后台，独立目录 {AUTO_USER_DATA_DIR}）…")
+    print(f"启动自动化夸克实例（无头后台，独立目录 {AUTO_USER_DATA_DIR}）…")
     # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP：脱离父进程组，
     # gocron/终端退出或被强杀时不连带杀掉 Chrome（否则实例半死成僵死状态）
     sp.Popen([
@@ -599,13 +599,13 @@ def close_auto_chrome(browser):
     """优雅关闭自动化 Chrome（Browser.close 走正常退出，Cookie 落盘）。
 
     任务结束后关闭实例，避免残留进程被 gocron 等调度器弄成僵死状态；
-    会话数据已持久化在 ChromeAuto 目录，下次启动自动恢复登录态。
+    会话数据已持久化在 QuarkAuto 目录，下次启动自动恢复登录态。
     """
     try:
         session = browser.new_browser_cdp_session()
         session.send("Browser.close")
         time.sleep(2)
-        print("已优雅关闭自动化 Chrome（会话已落盘）")
+        print("已优雅关闭自动化夸克（会话已落盘）")
         return True
     except Exception:
         pass
@@ -623,7 +623,7 @@ def main():
     ap.add_argument("--kill-chrome", action="store_true",
                     help="（仅 --launch 模式）自动关闭正在运行的 Chrome")
     ap.add_argument("--launch", action="store_true",
-                    help="回退：独立启动 Chrome 实例（需先关闭 Chrome）")
+                    help="回退：独立启动 夸克实例（需先关闭 Chrome）")
     ap.add_argument("--spawn", action="store_true",
                     help="连不上时，自动用独立数据目录启动带调试端口的 Chrome 再连接")
     ap.add_argument("--port", type=int, default=0,
@@ -640,7 +640,7 @@ def main():
         spawned_by_us = False
 
         if args.launch:
-            # ---- 旧方式：独立启动 Chrome（独占 profile，需先关现有 Chrome）----
+            # ---- 旧方式：独立启动夸克（独占 profile，需先关现有 Chrome）----
             if chrome_running():
                 if args.kill_chrome:
                     print("检测到 Chrome 正在运行，正在关闭 …")
@@ -669,7 +669,7 @@ def main():
                     pass
                 browser = None
             if browser is None and args.spawn:
-                # 自动拉起独立目录的 Chrome 实例再连
+                # 自动拉起独立目录的 夸克实例再连
                 spawn_port = args.port or 9222
                 # 连不上可能是旧实例僵死（端口在听但 CDP 无响应），先清理再拉新的
                 kill_auto_chrome()

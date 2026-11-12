@@ -45,7 +45,26 @@ for _stream in (sys.stdout, sys.stderr):
 # ---------------------------------------------------------------------------
 # 配置
 # ---------------------------------------------------------------------------
-CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+# Chrome 可执行文件候选路径（按优先级探测）。
+# 本机 Chrome 装在**用户目录**（非系统级），旧的系统级路径已失效；
+# Chrome 换装/升级后安装路径会变，因此给多个候选，启动时自动探测。
+CHROME_EXE_CANDIDATES = [
+    r"C:\Users\Mickey.Deng\AppData\Local\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+]
+
+
+def _pick_chrome_exe():
+    """返回实际存在的 Chrome 路径（都不存在时返回首选路径）。"""
+    from pathlib import Path as _P
+    for _p in CHROME_EXE_CANDIDATES:
+        if _P(_p).exists():
+            return _p
+    return CHROME_EXE_CANDIDATES[0]
+
+
+CHROME_PATH = _pick_chrome_exe()
 USER_DATA_DIR = r"C:\Users\Mickey.Deng\AppData\Local\Google\Chrome\User Data"
 PROFILE = "Default"
 # 独立于 xdgame 的 ChromeAuto：两站任务 gocron 并行调度时会互踩

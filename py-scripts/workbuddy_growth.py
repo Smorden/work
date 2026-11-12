@@ -61,14 +61,14 @@ for _stream in (sys.stdout, sys.stderr):
 # ---------------------------------------------------------------------------
 # 配置
 # ---------------------------------------------------------------------------
-CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+CHROME_PATH = r"D:\Program Files\Quark\quark.exe"
 # 独立于 xianyupc（ChromeAutoPC）、xianyudanji（ChromeAutoXY）的自动化 Chrome
-AUTO_USER_DATA_DIR = r"C:\Users\Mickey.Deng\AppData\Local\ChromeAutoGC"
+AUTO_USER_DATA_DIR = r"C:\Users\Mickey.Deng\AppData\Local\QuarkAutoGC"
 DEFAULT_PORT = 9224
 # 本脚本专属端口（只探测自己的，绝不连别的脚本的实例——否则会被对方
 # 任务结束时的关闭逻辑杀掉浏览器）：
 #   xdgame=9222(ChromeAuto) xianyudanji=9225(ChromeAutoXY)
-#   xianyupc=9223(ChromeAutoPC) workbuddy成长=9224(ChromeAutoGC)
+#   xianyupc=9223(ChromeAutoPC) workbuddy成长=9224(QuarkAutoGC)
 DEBUG_PORTS = [9224]
 
 GROWTH_URL = "https://www.workbuddy.cn/profile/growth-center?utm_medium=cpc&utm_id=gwzcw.15291244.15291244.15291244"
@@ -104,7 +104,7 @@ def probe_debug_port(port):
 
 
 def connect_via_cdp(p, port=0):
-    """连接现有 Chrome 实例。返回 (browser, port)，失败返回 (None, None)。"""
+    """连接现有夸克实例。返回 (browser, port)，失败返回 (None, None)。"""
     ports = [port] if port else DEBUG_PORTS
     for pt in ports:
         if not pt:
@@ -115,7 +115,7 @@ def connect_via_cdp(p, port=0):
             browser = p.chromium.connect_over_cdp(
                 f"http://127.0.0.1:{pt}", timeout=10000
             )
-            print(f"已连接现有 Chrome（127.0.0.1:{pt}）")
+            print(f"已连接现有夸克（127.0.0.1:{pt}）")
             return browser, pt
         except Exception as e:
             print(f"  [提示] 连接 127.0.0.1:{pt} 失败: {e}")
@@ -124,14 +124,14 @@ def connect_via_cdp(p, port=0):
 
 
 def kill_auto_chrome():
-    """只杀本脚本专用目录（ChromeAutoGC）的 Chrome 进程。
+    """只杀本脚本专用目录（QuarkAutoGC）的夸克进程。
 
     注意：这是强杀，会丢弃尚未落盘的 session cookie。仅在启动新实例前用于
     清理僵死进程；正常流程结束时绝不用它。
     """
     ps_cmd = (
-        "Get-CimInstance Win32_Process -Filter \"name='chrome.exe'\" | "
-        "Where-Object {$_.CommandLine -like '*ChromeAutoGC*'} | "
+        "Get-CimInstance Win32_Process -Filter \"name='quark.exe'\" | "
+        "Where-Object {$_.CommandLine -like '*QuarkAutoGC*'} | "
         "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
     )
     try:
@@ -140,18 +140,18 @@ def kill_auto_chrome():
             capture_output=True, timeout=15,
         )
         time.sleep(2)
-        print("  已清理僵死的自动化 Chrome 实例（ChromeAutoGC）")
+        print("  已清理僵死的自动化夸克实例（QuarkAutoGC）")
     except Exception as e:
-        print(f"  [提示] 清理自动化 Chrome 失败（忽略）: {e}")
+        print(f"  [提示] 清理自动化夸克失败（忽略）: {e}")
 
 
 def spawn_auto_chrome(port, show_window=False):
-    """启动独立 Chrome 实例。
+    """启动独立夸克 实例。
 
     --restore-last-session 让 Chrome 在重启时恢复上次会话（配合 session cookie
     固化双保险）。
     """
-    print(f"启动独立 Chrome（{('有窗口' if show_window else '无头')}，目录 {AUTO_USER_DATA_DIR}）…")
+    print(f"启动独立夸克（{('有窗口' if show_window else '无头')}，目录 {AUTO_USER_DATA_DIR}）…")
     args = [
         CHROME_PATH,
         f"--user-data-dir={AUTO_USER_DATA_DIR}",
@@ -591,7 +591,7 @@ def main():
             time.sleep(2)
 
         if browser is None and not args.no_spawn:
-            print("  启动独立 Chrome …")
+            print("  启动独立夸克 …")
             spawn_port = args.port or DEFAULT_PORT
             kill_auto_chrome()
             if spawn_auto_chrome(spawn_port, show_window=args.show):
@@ -599,7 +599,7 @@ def main():
                 spawned_by_us = True
 
         if browser is None:
-            print("[错误] 无法连接任何 Chrome 实例")
+            print("[错误] 无法连接任何 夸克实例")
             print("       若不想自动启动，请去掉 --no-spawn；"
                   "或先跑一次 `python workbuddy_growth.py --show` 完成首次登录。")
             return 1
@@ -709,11 +709,11 @@ def main():
                     session.send("Browser.close")
                     print("  已请求优雅关闭，等待会话落盘 …")
                     time.sleep(3)
-                    print("已优雅关闭自动化 Chrome（登录态已落盘）")
+                    print("已优雅关闭自动化夸克（登录态已落盘）")
                 except Exception as e:
                     print(f"  [警告] 优雅关闭失败，保留进程（不强杀，避免丢 Cookie）: {e}")
             elif spawned_by_us:
-                print("自动化 Chrome 保持常驻（下次直接复用；加 --close-browser 可关闭）")
+                print("自动化夸克保持常驻（下次直接复用；加 --close-browser 可关闭）")
 
 
 if __name__ == "__main__":
