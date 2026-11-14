@@ -1,4 +1,23 @@
-drop table temp.temp_dwd_dim_tcct_tail_handing_fee_df;
+
+create table if not exists temp.temp_dwd_dim_tcct_ykd_handing_fee_df
+(
+    dt date comment "报价日期",
+    cal_type                tinyint comment '1:单个si，2多个si按包裹附加,3入库卸货费，按体积计算，入库处理费_续重费 * 体积',
+    country                 varchar(50) comment "国家",
+    start_weight            int comment "起始重量",
+    end_weight              int comment "结束重量",
+    outstockfee             decimal(26, 8) comment "出库处理费",
+    outstockfee_additionfee decimal(26, 8) comment "出库处理费_续重费",
+    instockfee              decimal(26, 8) comment "入库处理费",
+    instock_additionfee     decimal(26, 8) comment "入库处理费_续重费",
+    currency                varchar(10) comment "报价币种",
+    etl_create_time         datetime default CURRENT_TIMESTAMP COMMENT "etl执行时间"
+) Duplicate KEY(dt, cal_type,country)
+comment "尾程处理费报价-si"
+DISTRIBUTED BY HASH(dt) BUCKETS 1
+PROPERTIES("light_schema_change" = "true")
+;
+
 create table if not exists temp.temp_dwd_dim_tcct_tail_handing_fee_df
 (
     dt date comment "报价日期",
@@ -92,7 +111,7 @@ with stock_out_order as (
     select dt, calc_bill_time, bill_generated_time, parcel_id, third_party_no, currency_code, bill_amount, warehouse_cn_name
     from dwd.dwd_fact_lgct_tail_bill_transaction_di
     where warehouse_service_name = 'YKD'
-      and dt between '2026-09-01' and '2026-09-30'
+      and dt between '2026-10-01' and '2026-10-31'
       and sh_fee_item_name = '海外仓处理费'
       and bill_calc_detail_str not like '入库操作费%'
       and record_status = 1
@@ -117,12 +136,12 @@ with stock_out_order as (
   , dim_sku as (
         select dt, sku, weight as sku_weight
         from dwd.dwd_dim_sku_ds
-        where dt between '2026-09-01' and '2026-09-30'
+        where dt between '2026-10-01' and '2026-10-31'
         )
    ,product_info as (
        select dt, goods_code, sku_weight
        from dwd.dwd_dim_tcct_ykd_product_info_ds
-       where dt between '2026-09-01' and '2026-09-30'
+       where dt between '2026-10-01' and '2026-10-31'
     )
   , parcel_sku_weight as (
         select
@@ -413,7 +432,7 @@ select distinct warehouse_cn_name
 from dwd.dwd_fact_lgct_tail_bill_transaction_di
 where warehouse_service_name = '4PX'
   and record_status = 1
-  and dt between '2026-09-01' and '2026-09-30'
+  and dt between '2026-10-01' and '2026-10-31'
       -- and sh_fee_item_name = '海外仓处理费'
   and left(bill_calc_detail_str, 2) = '出库'
 ;
@@ -428,3 +447,4 @@ where dt >= '2026-04-01'
 and warehouse_id in (select warehouse_id from dwd.dwd_dim_warehouse_df where warehouse_service_name = '4PX')
 AND stock_order_type_name= '调拨入库'
 ;
+SELECT IF( round( ifnull( down.down_value, 0) - ifnull( up.up_value, 0 ), 2 ) = 0, 0, 1 ) AS is_abnormal, 0 AS normal_range, round( ifnull( down.down_value, 0 ) - ifnull( up.up_value, 0 ), 2 ) AS result_value FROM( SELECT count(1) AS up_value FROM dwd.dwd_dim_opct_ebay_listing_ds where dt = date_sub(curdate(), interval 1 day) ) up JOIN ( select count(distinct listing.item_id, coalesce(variants.customlabel, listing.customlabel, '')) as down_value FROM ods.ods_itop_pl_ebay_listing_df AS listing LEFT JOIN ods.ods_itop_pl_ebay_listing_variants_df AS variants ON variants.listing_id = listing.id AND variants.record_status = 1 WHERE listing.record_status = 1 ) down;
