@@ -39,3 +39,41 @@ VALUES
 ('2026-04-01', 2, '法国', 22500, 99999999, 3.31, 0, 0, 0, 'EUR', 'YKD'),
 ('2026-04-01', 2, '西班牙', 22500, 99999999, 2.8, 0, 0, 0, 'EUR', 'YKD')
 ;
+select *
+from temp.temp_dwd_dim_tcct_tail_handing_fee_df
+where country = '西班牙'
+;
+
+insert into temp.temp_dwd_dim_tcct_ykd_handing_fee_df
+(
+  dt
+,cal_type
+,country
+,start_weight
+,end_weight
+,outstockfee
+,outstockfee_additionfee
+,instockfee
+,instock_additionfee
+,currency
+)
+select dt
+  ,cal_type
+  ,country
+  ,start_weight
+  ,end_weight
+  ,outstockfee
+  ,outstockfee_additionfee
+  ,instockfee
+  ,instock_additionfee
+  ,currency
+from temp.temp_dwd_dim_tcct_tail_handing_fee_df
+where dt = '2026-04-01'
+and warehouse_service_name = 'YKD'
+and country in ('西班牙','法国')
+;
+select distinct country
+from temp.temp_dwd_dim_tcct_ykd_handing_fee_df
+where dt = '2026-04-01'
+-- and warehouse_service_name = 'YKD'
+;
