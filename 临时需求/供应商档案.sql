@@ -26,8 +26,9 @@ where dt = date_sub(curdate(), interval 1 day)
 
 ;
 -- SKU、中文名称，供应商名称、付款方式
-select a.sku, c.sku_name 中文名称, c.sku_status sku等级, a.supplier_name 供应商名称
+select a.sku, c.sku_name 中文名称, a.supplier_name 供应商名称
      , d.pay_method_alias 付款方式
+-- ,c.sku_tag
 from
     (
         select
@@ -44,9 +45,11 @@ join (select pay_method_code, supplier_id from dwd.dwd_dim_supplier_ds
       where dt = date_sub(curdate(), interval 1 day)
         and supplier_biz_status = 4) as b on b.supplier_id = a.ps_supplier_id
 join (
-    select sku, sku_name , sku_status
+    select sku, sku_name , sku_status, sku_tag
     from dwd.dwd_dim_sku_ds
     where dt = date_sub(curdate(), interval 1 day)
+      and sku_status = '在售'
+    and sku_tag not like '%新品测款%'
         ) as c on c.sku = a.sku
 join dwd.dwd_dim_pcct_pay_method_df as d on d.pay_code = b.pay_method_code
 where d.pay_method_alias in ('100%预付', '100%款到发货')
